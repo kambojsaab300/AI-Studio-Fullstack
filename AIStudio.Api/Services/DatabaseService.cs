@@ -232,6 +232,26 @@ namespace AIStudio.Api.Services
         public async Task<bool> CompleteTaskAsync(long taskId, string workerId, string status, string? outputImageUrl, string? outputImageUrls, string? outputText, decimal? matchScore, string? error, int? processMs)
         {
             using var conn = CreateConnection();
+
+            // App-specific error formatting: Stamp originating app_id in error return
+            if (status == "failed" && !string.IsNullOrWhiteSpace(error))
+            {
+                try
+                {
+                    var taskAppId = await conn.ExecuteScalarAsync<string>(
+                        "SELECT app_id FROM ai_studio_tasks WITH (NOLOCK) WHERE id = @TaskId;", new { TaskId = taskId });
+                    if (!string.IsNullOrEmpty(taskAppId))
+                    {
+                        string prefix = $"[{taskAppId.ToUpper()}]";
+                        if (!error.StartsWith("[", StringComparison.OrdinalIgnoreCase))
+                        {
+                            error = $"{prefix} {error}";
+                        }
+                    }
+                }
+                catch { }
+            }
+
             string sql = @"
                 UPDATE ai_studio_tasks
                 SET status = @Status,
