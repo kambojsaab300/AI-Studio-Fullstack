@@ -56,6 +56,35 @@ namespace AIStudio.Api.Controllers
             return fallback;
         }
 
+        private string? GetAuthenticatedUserId()
+        {
+            string? tokenStr = null;
+            var authHeader = Request.Headers["Authorization"].ToString();
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+            }
+            else if (Request.Cookies.TryGetValue("aistudio_jwt", out var cToken) && !string.IsNullOrEmpty(cToken))
+            {
+                tokenStr = cToken;
+            }
+
+            if (string.IsNullOrWhiteSpace(tokenStr)) return null;
+
+            try
+            {
+                var handler = new JwtSecurityTokenHandler();
+                if (!handler.CanReadToken(tokenStr)) return null;
+                var jwt = handler.ReadJwtToken(tokenStr);
+                if (jwt.ValidTo < DateTime.UtcNow) return null;
+                return jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "sub")?.Value;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         [HttpPost("rest/v1/rpc/{functionName}")]
         [HttpPost("api/rpc/{functionName}")]
         public async Task<IActionResult> HandleRpc(string functionName, [FromBody] JsonElement body)
@@ -68,6 +97,15 @@ namespace AIStudio.Api.Controllers
                     case "upload_ai_studio_task":
                     {
                         JsonElement payload = body.ValueKind == JsonValueKind.Object && body.TryGetProperty("p_payload", out var p) ? p : body;
+                        
+                        string? authUserId = GetAuthenticatedUserId();
+                        string passedUserId = GetStr(payload, "user_id", "") ?? "";
+                        string effectiveUserId = !string.IsNullOrEmpty(authUserId) 
+                            ? authUserId 
+                            : (!string.IsNullOrEmpty(passedUserId) ? passedUserId : "customer_" + Guid.NewGuid().ToString("N")[..8]);
+
+                        string appId = GetStr(payload, "app_id", "weargen")!;
+
                         var task = new TaskItem
                         {
                             TaskType = GetStr(payload, "task_type", "")!,
@@ -81,9 +119,9 @@ namespace AIStudio.Api.Controllers
                             InputImageUrl = GetStr(payload, "input_image_url"),
                             ExtraImageUrls = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("extra_image_urls", out var ei) ? ei.ToString() : null,
                             ConversationId = GetStr(payload, "conversation_id"),
-                            UserId = GetStr(payload, "user_id", "weargen_user_1")!,
+                            UserId = effectiveUserId,
                             BatchCount = GetInt(payload, "batch_count", 1),
-                            AppId = GetStr(payload, "app_id", "weargen")!,
+                            AppId = appId,
                             Priority = GetInt(payload, "priority", 0),
                             FamilyRoleKeys = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("family_role_keys", out var fr) ? fr.ToString() : null
                         };
@@ -215,6 +253,9 @@ namespace AIStudio.Api.Controllers
                             customer_visible = c.CustomerVisible,
                             sort = c.Sort,
                             tool = c.Tool,
+                            apps = !string.IsNullOrEmpty(c.AppsCsv)
+                                ? c.AppsCsv.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToArray()
+                                : new [] { "weargen", "ppp" },
                             enabled = c.Enabled
                         }).ToList();
 
@@ -264,6 +305,7 @@ namespace AIStudio.Api.Controllers
                         return Ok(result);
                     }
 
+                    case "get_apps":
                     case "get_app_list":
                     {
                         // ⚡ 0ms Cached In-Memory Response

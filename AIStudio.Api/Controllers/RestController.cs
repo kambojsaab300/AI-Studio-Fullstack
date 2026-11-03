@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AIStudio.Api.Services;
@@ -21,6 +23,43 @@ namespace AIStudio.Api.Controllers
         {
             _db = db;
             _cache = cache;
+        }
+
+        private (string? userId, bool isAdmin) GetAuthContext()
+        {
+            string? tokenStr = null;
+            var authHeader = Request.Headers["Authorization"].ToString();
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+            }
+            else if (Request.Cookies.TryGetValue("aistudio_jwt", out var cToken) && !string.IsNullOrEmpty(cToken))
+            {
+                tokenStr = cToken;
+            }
+
+            if (string.IsNullOrWhiteSpace(tokenStr)) return (null, false);
+
+            try
+            {
+                var handler = new JwtSecurityTokenHandler();
+                if (!handler.CanReadToken(tokenStr)) return (null, false);
+                var jwt = handler.ReadJwtToken(tokenStr);
+                if (jwt.ValidTo < DateTime.UtcNow) return (null, false);
+
+                var userId = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "sub")?.Value;
+                var roleClaim = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role || c.Type == "role")?.Value ?? "";
+                var adminClaim = jwt.Claims.FirstOrDefault(c => c.Type == "is_admin")?.Value;
+
+                bool isAdmin = (adminClaim != null && adminClaim.Equals("true", StringComparison.OrdinalIgnoreCase))
+                    || roleClaim.Equals("admin", StringComparison.OrdinalIgnoreCase);
+
+                return (userId, isAdmin);
+            }
+            catch
+            {
+                return (null, false);
+            }
         }
 
         private static readonly HashSet<string> JsonColumnNames = new(StringComparer.OrdinalIgnoreCase)
@@ -217,6 +256,21 @@ namespace AIStudio.Api.Controllers
                     else if (cleanVal == "not null") whereClauses.Add($"[{key}] IS NOT NULL");
                     else if (cleanVal == "true") whereClauses.Add($"[{key}] = 1");
                     else if (cleanVal == "false") whereClauses.Add($"[{key}] = 0");
+                }
+            }
+
+            // Customer Row-Level Security (RLS) Isolation
+            if (table.Equals("ai_studio_tasks", StringComparison.OrdinalIgnoreCase))
+            {
+                var (authUserId, isAdmin) = GetAuthContext();
+                if (!isAdmin && !string.IsNullOrEmpty(authUserId))
+                {
+                    // Strictly isolate to the authenticated customer's own tasks
+                    whereClauses.RemoveAll(c => c.StartsWith("[user_id]"));
+                    paramIndex++;
+                    string authParam = $"p_auth_uid_{paramIndex}";
+                    whereClauses.Add($"[user_id] = @{authParam}");
+                    param.Add(authParam, authUserId);
                 }
             }
 

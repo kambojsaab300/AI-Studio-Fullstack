@@ -163,6 +163,8 @@ namespace AIStudio.Api.Models
         public bool Enabled { get; set; } = true;
         public int Sort { get; set; } = 0;
         public string Tool { get; set; } = "image";
+        public string? AppsCsv { get; set; }
+        public List<string> Apps { get; set; } = new();
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 

@@ -304,7 +304,13 @@ namespace AIStudio.Api.Services
                        c.inputs, c.optional, c.labels, c.customer_labels as CustomerLabels, c.extras,
                        c.prompt_required as PromptRequired, c.face_check as FaceCheck, c.edit, c.transparent,
                        c.angles, c.family, c.per_photo as PerPhoto, c.customer_visible as CustomerVisible,
-                       c.enabled, c.sort, COALESCE(tt.tool, 'image') as Tool, c.updated_at as UpdatedAt
+                       c.enabled, c.sort, COALESCE(tt.tool, 'image') as Tool, c.updated_at as UpdatedAt,
+                       COALESCE((
+                           SELECT STRING_AGG(m.app_id, ',')
+                           FROM ai_studio_app_tasks m WITH (NOLOCK)
+                           JOIN ai_studio_apps a WITH (NOLOCK) ON a.app_id = m.app_id
+                           WHERE m.task_type = c.task_type AND a.enabled = 1
+                       ), 'weargen,ppp') as AppsCsv
                 FROM ai_studio_task_catalog c
                 LEFT JOIN ai_studio_tool_types tt ON tt.task_type = c.task_type
                 ORDER BY c.sort ASC, c.task_type ASC;";
