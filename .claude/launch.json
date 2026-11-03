@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "ai-studio", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--config", "vite.local.mjs"], "port": 5173 }
+  ]
+}

@@ -1,0 +1,51 @@
+name: Build & Deploy .NET API to MonsterASP.net
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'AIStudio.Api/**'
+      - '.github/workflows/deploy-monsterasp.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore AIStudio.Api/AIStudio.Api.csproj
+
+      - name: Build & Publish Release
+        run: |
+          dotnet publish AIStudio.Api/AIStudio.Api.csproj \
+            -c Release \
+            -o ./publish_output
+
+      - name: Upload Build Artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIStudio-Api-Deploy-Package
+          path: ./publish_output
+
+      - name: Deploy via FTP to MonsterASP.net (if secrets configured)
+        if: env.FTP_SERVER != '' && env.FTP_USERNAME != ''
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        env:
+          FTP_SERVER: ${{ secrets.MONSTERASP_FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.MONSTERASP_FTP_USERNAME }}
+        with:
+          server: ${{ secrets.MONSTERASP_FTP_SERVER }}
+          username: ${{ secrets.MONSTERASP_FTP_USERNAME }}
+          password: ${{ secrets.MONSTERASP_FTP_PASSWORD }}
+          local-dir: ./publish_output/
+          server-dir: /wwwroot/
+          dangerous-clean-slate: false

@@ -1,0 +1,47 @@
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Standalone Git Backup
+.git_standalone_backup/
+AI-Studio/.git_standalone_backup/
+
+# Node / Dependencies / Frontend Builds
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+preview/dist/
+
+# .NET / C# Build Artifacts
+[Bb]in/
+[Oo]bj/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+publish/
+publish_output/
+*.zip
+
+# Environment files & local configs
+.env
+.env.local
+.env.*.local
+appsettings.Development.json
+AIStudio.Api/appsettings.Development.json
+appsettings.*.local.json
+
+# Logs and debug files
+*.log
+npm-debug.log*
+yarn-debug.log*
+/tmp/
