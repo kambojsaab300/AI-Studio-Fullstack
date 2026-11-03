@@ -84,15 +84,30 @@ namespace AIStudio.Api.Controllers
             "ai_studio_tools",
             "ai_studio_tool_types",
             "ai_studio_task_catalog",
+            "ai_studio_catalog",
             "ai_studio_family_roles",
             "ai_studio_apps",
             "ai_studio_app_tasks",
             "ai_studio_users",
-            "ai_studio_admins"
+            "ai_studio_admins",
+            "ai_studio_action_log",
+            "ai_studio_worker_tools"
         };
+
+        private static string NormalizeTableName(string table)
+        {
+            if (string.Equals(table, "ai_studio_catalog", StringComparison.OrdinalIgnoreCase))
+                return "ai_studio_task_catalog";
+            if (string.Equals(table, "ai_studio_action_log", StringComparison.OrdinalIgnoreCase))
+                return "ai_studio_admin_log";
+            if (string.Equals(table, "ai_studio_worker_tools", StringComparison.OrdinalIgnoreCase))
+                return "ai_studio_tools";
+            return table;
+        }
 
         private void InvalidateTableCache(string table)
         {
+            table = NormalizeTableName(table);
             if (CacheableTables.Contains(table))
             {
                 // Remove base cache key and notify controllers
@@ -106,6 +121,7 @@ namespace AIStudio.Api.Controllers
         [HttpGet("api/rest/{table}")]
         public async Task<IActionResult> QueryTable(string table)
         {
+            table = NormalizeTableName(table);
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
 
@@ -304,6 +320,7 @@ namespace AIStudio.Api.Controllers
         [HttpPost("api/rest/{table}")]
         public async Task<IActionResult> InsertTable(string table, [FromBody] JsonElement body)
         {
+            table = NormalizeTableName(table);
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
 
@@ -366,6 +383,7 @@ namespace AIStudio.Api.Controllers
         [HttpPut("api/rest/{table}")]
         public async Task<IActionResult> UpdateTable(string table, [FromBody] JsonElement body)
         {
+            table = NormalizeTableName(table);
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
 
@@ -425,6 +443,7 @@ namespace AIStudio.Api.Controllers
         [HttpDelete("api/rest/{table}")]
         public async Task<IActionResult> DeleteTable(string table)
         {
+            table = NormalizeTableName(table);
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
 
