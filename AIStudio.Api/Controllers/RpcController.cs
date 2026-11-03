@@ -198,6 +198,7 @@ namespace AIStudio.Api.Controllers
                         return Ok(new object[0]);
                     }
 
+                    case "complete_ai_studio_task":
                     case "worker_complete_task":
                     {
                         long id = GetLong(body, "p_id", GetLong(body, "id"));
