@@ -230,6 +230,10 @@ namespace AIStudio.Api.Controllers
                 var parts = ord.ToString().Split('.');
                 string col = parts[0].Trim();
                 string dir = parts.Length > 1 && parts[1].Equals("desc", StringComparison.OrdinalIgnoreCase) ? "DESC" : "ASC";
+                if (table.Equals("ai_studio_family_roles", StringComparison.OrdinalIgnoreCase) && col.Equals("sort", StringComparison.OrdinalIgnoreCase))
+                {
+                    col = "sort_order";
+                }
                 orderSql = $"ORDER BY [{col}] {dir}";
             }
 
