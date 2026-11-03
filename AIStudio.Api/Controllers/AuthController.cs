@@ -1,10 +1,12 @@
 using System;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 using AIStudio.Api.Models;
 using AIStudio.Api.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -49,6 +51,17 @@ namespace AIStudio.Api.Controllers
             bool isAdmin = user.Role == "admin" || await _db.IsAdminAsync(user.Id);
             string token = GenerateJwtToken(user, isAdmin);
 
+            // Set secure HttpOnly cookie for automatic browser persistence across refreshes
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true, // HTTPS on MonsterASP
+                SameSite = SameSiteMode.Lax,
+                Expires = DateTimeOffset.UtcNow.AddDays(30),
+                Path = "/"
+            };
+            Response.Cookies.Append("aistudio_jwt", token, cookieOptions);
+
             return Ok(new
             {
                 access_token = token,
@@ -63,6 +76,67 @@ namespace AIStudio.Api.Controllers
             });
         }
 
+        [HttpPost("logout")]
+        public IActionResult Logout()
+        {
+            Response.Cookies.Delete("aistudio_jwt", new CookieOptions
+            {
+                Path = "/",
+                Secure = true,
+                SameSite = SameSiteMode.Lax
+            });
+            return Ok(new { success = true, message = "Logged out successfully." });
+        }
+
+        [HttpGet("me")]
+        [HttpGet("user")]
+        public async Task<IActionResult> GetCurrentUser()
+        {
+            string? tokenStr = null;
+            var authHeader = Request.Headers["Authorization"].ToString();
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+            }
+            else if (Request.Cookies.TryGetValue("aistudio_jwt", out var cToken) && !string.IsNullOrEmpty(cToken))
+            {
+                tokenStr = cToken;
+            }
+
+            if (string.IsNullOrWhiteSpace(tokenStr))
+                return Unauthorized(new { error = "Not authenticated" });
+
+            var handler = new JwtSecurityTokenHandler();
+            if (!handler.CanReadToken(tokenStr))
+                return Unauthorized(new { error = "Invalid token format" });
+
+            var jwt = handler.ReadJwtToken(tokenStr);
+            if (jwt.ValidTo < DateTime.UtcNow)
+                return Unauthorized(new { error = "Token has expired" });
+
+            var userId = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "sub")?.Value;
+            var email = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email || c.Type == "email")?.Value ?? "";
+            var roleClaim = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role || c.Type == "role")?.Value ?? "customer";
+            var adminClaim = jwt.Claims.FirstOrDefault(c => c.Type == "is_admin")?.Value;
+
+            bool isAdmin = (adminClaim != null && adminClaim.Equals("true", StringComparison.OrdinalIgnoreCase))
+                || roleClaim.Equals("admin", StringComparison.OrdinalIgnoreCase);
+
+            if (!isAdmin && !string.IsNullOrEmpty(userId))
+            {
+                isAdmin = await _db.IsAdminAsync(userId);
+            }
+
+            return Ok(new
+            {
+                id = userId,
+                email = email,
+                role = isAdmin ? "admin" : roleClaim,
+                is_admin = isAdmin,
+                access_token = tokenStr
+            });
+        }
+
         [HttpPost("signup")]
         public async Task<IActionResult> Signup([FromBody] SignupRequest req)
         {
@@ -73,6 +147,15 @@ namespace AIStudio.Api.Controllers
             {
                 var user = await _db.RegisterUserAsync(req.Email, req.Password, "customer");
                 string token = GenerateJwtToken(user, false);
+
+                Response.Cookies.Append("aistudio_jwt", token, new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.Lax,
+                    Expires = DateTimeOffset.UtcNow.AddDays(30),
+                    Path = "/"
+                });
 
                 return Ok(new
                 {
@@ -98,14 +181,28 @@ namespace AIStudio.Api.Controllers
         {
             if (string.IsNullOrWhiteSpace(userId))
             {
+                string? tokenStr = null;
                 var authHeader = Request.Headers["Authorization"].ToString();
-                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
-                    var tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+                    tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+                }
+                else if (Request.Cookies.TryGetValue("aistudio_jwt", out var cToken) && !string.IsNullOrEmpty(cToken))
+                {
+                    tokenStr = cToken;
+                }
+
+                if (!string.IsNullOrEmpty(tokenStr))
+                {
                     var handler = new JwtSecurityTokenHandler();
                     if (handler.CanReadToken(tokenStr))
                     {
                         var jwt = handler.ReadJwtToken(tokenStr);
+                        var adminClaim = jwt.Claims.FirstOrDefault(c => c.Type == "is_admin" || c.Type == ClaimTypes.Role);
+                        if (adminClaim != null && (adminClaim.Value.Equals("true", StringComparison.OrdinalIgnoreCase) || adminClaim.Value.Equals("admin", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            return Ok(new { is_admin = true });
+                        }
                         userId = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "sub")?.Value;
                     }
                 }

@@ -374,9 +374,18 @@ namespace AIStudio.Api.Controllers
                     case "is_ai_studio_admin":
                     {
                         var authHeader = Request.Headers["Authorization"].ToString();
+                        string? tokenStr = null;
                         if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                         {
-                            var tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+                            tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+                        }
+                        else if (Request.Cookies.TryGetValue("aistudio_jwt", out var cToken) && !string.IsNullOrEmpty(cToken))
+                        {
+                            tokenStr = cToken;
+                        }
+
+                        if (!string.IsNullOrEmpty(tokenStr))
+                        {
                             var handler = new JwtSecurityTokenHandler();
                             if (handler.CanReadToken(tokenStr))
                             {
