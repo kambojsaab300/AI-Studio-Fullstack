@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AIStudio.Api.Services;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AIStudio.Api.Controllers
 {
@@ -14,18 +15,38 @@ namespace AIStudio.Api.Controllers
     public class RestController : ControllerBase
     {
         private readonly DatabaseService _db;
+        private readonly IMemoryCache _cache;
 
-        public RestController(DatabaseService db)
+        public RestController(DatabaseService db, IMemoryCache cache)
         {
             _db = db;
+            _cache = cache;
         }
+
+        private static readonly HashSet<string> JsonColumnNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "extra_image_urls", "output_image_urls", "imgbb_image_urls", "extras",
+            "inputs", "optional", "labels", "customer_labels", "task_types", "apps",
+            "aspect_ratios", "image_sizes", "rules", "payload", "tags"
+        };
+
+        private static readonly HashSet<string> CacheableTables = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ai_studio_task_catalog",
+            "ai_studio_apps",
+            "ai_studio_app_tasks",
+            "ai_studio_models",
+            "ai_studio_prompts",
+            "ai_studio_family_roles",
+            "ai_studio_settings"
+        };
 
         private static Dictionary<string, object?> ParseJsonColumns(IDictionary<string, object> row)
         {
             var result = new Dictionary<string, object?>(row.Count);
             foreach (var kvp in row)
             {
-                if (kvp.Value is string str && str.Length >= 2 &&
+                if (JsonColumnNames.Contains(kvp.Key) && kvp.Value is string str && str.Length >= 2 &&
                     ((str[0] == '[' && str[^1] == ']') || (str[0] == '{' && str[^1] == '}')))
                 {
                     try { result[kvp.Key] = JsonSerializer.Deserialize<JsonElement>(str); }
@@ -38,6 +59,15 @@ namespace AIStudio.Api.Controllers
             }
             return result;
         }
+
+        private static readonly HashSet<string> LargeTables = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ai_studio_tasks",
+            "ai_studio_admin_log",
+            "ai_studio_alert_log",
+            "ai_studio_usage",
+            "ai_studio_users"
+        };
 
         private static readonly HashSet<string> AllowedTables = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -61,12 +91,32 @@ namespace AIStudio.Api.Controllers
             "ai_studio_admins"
         };
 
+        private void InvalidateTableCache(string table)
+        {
+            if (CacheableTables.Contains(table))
+            {
+                // Remove base cache key and notify controllers
+                _cache.Remove($"table_{table.ToLowerInvariant()}_all");
+                _cache.Remove($"rpc_get_task_catalog");
+                _cache.Remove($"rpc_get_app_list");
+            }
+        }
+
         [HttpGet("rest/v1/{table}")]
         [HttpGet("api/rest/{table}")]
         public async Task<IActionResult> QueryTable(string table)
         {
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
+
+            string queryString = Request.QueryString.Value ?? "";
+            bool isCacheable = CacheableTables.Contains(table) && string.IsNullOrEmpty(queryString);
+            string cacheKey = $"table_{table.ToLowerInvariant()}_all";
+
+            if (isCacheable && _cache.TryGetValue(cacheKey, out var cachedData))
+            {
+                return Ok(cachedData);
+            }
 
             using var conn = _db.CreateConnection();
             var query = Request.Query;
@@ -161,7 +211,8 @@ namespace AIStudio.Api.Controllers
             int totalCount = 0;
             if (needsCount)
             {
-                string countSql = $"SELECT COUNT(1) FROM [{table}] {whereSql};";
+                // High performance lock-free count
+                string countSql = $"SELECT COUNT(1) FROM [{table}] WITH (NOLOCK) {whereSql};";
                 totalCount = await conn.ExecuteScalarAsync<int>(countSql, param);
             }
 
@@ -190,23 +241,38 @@ namespace AIStudio.Api.Controllers
             if (query.TryGetValue("limit", out var lim) && int.TryParse(lim.ToString(), out int lVal))
                 limitVal = Math.Max(1, lVal);
 
+            // Enforce Server-Side Pagination on heavy tables (Avoid unbounded full table memory dumps)
+            if (!limitVal.HasValue && LargeTables.Contains(table))
+            {
+                limitVal = 50; // Default page limit: 50
+            }
+            if (limitVal.HasValue)
+            {
+                limitVal = Math.Min(limitVal.Value, 100); // Strict safety ceiling: max 100 items per request
+            }
+
             string sql;
             if (limitVal.HasValue)
             {
                 if (string.IsNullOrEmpty(orderSql))
                 {
-                    // Need order by for OFFSET / FETCH
                     orderSql = "ORDER BY (SELECT NULL)";
                 }
-                sql = $"SELECT {select} FROM [{table}] {whereSql} {orderSql} OFFSET {offsetVal} ROWS FETCH NEXT {limitVal.Value} ROWS ONLY;";
+                // High performance lock-free query with NOLOCK hint
+                sql = $"SELECT {select} FROM [{table}] WITH (NOLOCK) {whereSql} {orderSql} OFFSET {offsetVal} ROWS FETCH NEXT {limitVal.Value} ROWS ONLY;";
             }
             else
             {
-                sql = $"SELECT {select} FROM [{table}] {whereSql} {orderSql};";
+                // High performance lock-free query with NOLOCK hint
+                sql = $"SELECT {select} FROM [{table}] WITH (NOLOCK) {whereSql} {orderSql};";
             }
 
             var rows = (await conn.QueryAsync(sql, param)).ToList();
             var parsed = rows.Select(r => ParseJsonColumns((IDictionary<string, object>)r)).ToList();
+
+            // Set standard pagination metadata headers
+            Response.Headers["X-Page-Limit"] = (limitVal ?? parsed.Count).ToString();
+            Response.Headers["X-Page-Offset"] = offsetVal.ToString();
 
             if (needsCount)
             {
@@ -221,6 +287,12 @@ namespace AIStudio.Api.Controllers
                 return Ok(parsed.FirstOrDefault());
             }
 
+            // Save to memory cache for 3 minutes if static table
+            if (isCacheable)
+            {
+                _cache.Set(cacheKey, parsed, TimeSpan.FromMinutes(3));
+            }
+
             return Ok(parsed);
         }
 
@@ -230,6 +302,8 @@ namespace AIStudio.Api.Controllers
         {
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
+
+            InvalidateTableCache(table);
 
             using var conn = _db.CreateConnection();
             var items = new List<JsonElement>();
@@ -242,30 +316,41 @@ namespace AIStudio.Api.Controllers
                 items.Add(body);
             }
 
-            foreach (var item in items)
+            if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+            using var trans = conn.BeginTransaction();
+            try
             {
-                var cols = new List<string>();
-                var vals = new List<string>();
-                var param = new DynamicParameters();
-
-                foreach (var prop in item.EnumerateObject())
+                foreach (var item in items)
                 {
-                    cols.Add($"[{prop.Name}]");
-                    vals.Add($"@{prop.Name}");
-                    if (prop.Value.ValueKind == JsonValueKind.Null || prop.Value.ValueKind == JsonValueKind.Undefined)
-                        param.Add(prop.Name, (object?)null);
-                    else if (prop.Value.ValueKind == JsonValueKind.True)
-                        param.Add(prop.Name, true);
-                    else if (prop.Value.ValueKind == JsonValueKind.False)
-                        param.Add(prop.Name, false);
-                    else if (prop.Value.ValueKind == JsonValueKind.Number)
-                        param.Add(prop.Name, prop.Value.GetDecimal());
-                    else
-                        param.Add(prop.Name, prop.Value.ToString());
-                }
+                    var cols = new List<string>();
+                    var vals = new List<string>();
+                    var param = new DynamicParameters();
 
-                string sql = $"INSERT INTO [{table}] ({string.Join(", ", cols)}) VALUES ({string.Join(", ", vals)});";
-                await conn.ExecuteAsync(sql, param);
+                    foreach (var prop in item.EnumerateObject())
+                    {
+                        cols.Add($"[{prop.Name}]");
+                        vals.Add($"@{prop.Name}");
+                        if (prop.Value.ValueKind == JsonValueKind.Null || prop.Value.ValueKind == JsonValueKind.Undefined)
+                            param.Add(prop.Name, (object?)null);
+                        else if (prop.Value.ValueKind == JsonValueKind.True)
+                            param.Add(prop.Name, true);
+                        else if (prop.Value.ValueKind == JsonValueKind.False)
+                            param.Add(prop.Name, false);
+                        else if (prop.Value.ValueKind == JsonValueKind.Number)
+                            param.Add(prop.Name, prop.Value.GetDecimal());
+                        else
+                            param.Add(prop.Name, prop.Value.ToString());
+                    }
+
+                    string sql = $"INSERT INTO [{table}] ({string.Join(", ", cols)}) VALUES ({string.Join(", ", vals)});";
+                    await conn.ExecuteAsync(sql, param, trans);
+                }
+                trans.Commit();
+            }
+            catch
+            {
+                trans.Rollback();
+                throw;
             }
 
             return Ok(new { success = true, count = items.Count });
@@ -279,6 +364,8 @@ namespace AIStudio.Api.Controllers
         {
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
+
+            InvalidateTableCache(table);
 
             using var conn = _db.CreateConnection();
             var query = Request.Query;
@@ -336,6 +423,8 @@ namespace AIStudio.Api.Controllers
         {
             if (!AllowedTables.Contains(table))
                 return NotFound(new { error = $"Table {table} not allowed." });
+
+            InvalidateTableCache(table);
 
             using var conn = _db.CreateConnection();
             var query = Request.Query;

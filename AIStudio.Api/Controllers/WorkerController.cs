@@ -92,7 +92,8 @@ namespace AIStudio.Api.Controllers
                 image_max_side = s.ImageMaxSide,
                 image_quality = s.ImageQuality,
                 heartbeat_sec = s.HeartbeatSec,
-                fallback_sec = s.FallbackSec
+                fallback_sec = s.FallbackSec,
+                worker_recycle_after_tasks = s.WorkerRecycleAfterTasks <= 0 ? 50 : s.WorkerRecycleAfterTasks
             });
         }
 

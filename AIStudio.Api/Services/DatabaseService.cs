@@ -68,22 +68,17 @@ namespace AIStudio.Api.Services
         }
 
         // ==========================================
-        // TASK CREATION (Customer & Admin)
+        // TASK CREATION (Customer & Admin) - Zero N+1 Round Trips
         // ==========================================
         public async Task<long> CreateTaskAsync(TaskItem task)
         {
             using var conn = CreateConnection();
 
-            // Determine tool from task catalog
-            var tool = await conn.ExecuteScalarAsync<string?>(
-                "SELECT COALESCE(tt.tool, 'image') FROM ai_studio_task_catalog c LEFT JOIN ai_studio_tool_types tt ON tt.task_type = c.task_type WHERE c.task_type = @TaskType",
-                new { task.TaskType }) ?? "image";
-
-            task.Tool = tool;
             task.CreatedAt = DateTimeOffset.UtcNow;
             task.UpdatedAt = DateTimeOffset.UtcNow;
             task.Status = "pending";
 
+            // Tool is resolved inline in SQL Server in 1 single round-trip (No N+1 tool lookup query)
             string insertSql = @"
                 INSERT INTO ai_studio_tasks (
                     task_type, model, prompt, system_text, aspect_ratio, image_size,
@@ -97,7 +92,16 @@ namespace AIStudio.Api.Services
                     @TaskType, @Model, @Prompt, @SystemText, @AspectRatio, @ImageSize,
                     @FaceImageUrl, @StyleImageUrl, @InputImageUrl, @ExtraImageUrls,
                     @ConversationId, @OutputText, @OutputImageUrl, @OutputImageUrls,
-                    @UserId, @BatchCount, @Status, @WorkerId, @Tool, @AppId, @Priority, @FamilyRoleKeys,
+                    @UserId, @BatchCount, @Status, @WorkerId,
+                    COALESCE(
+                        @Tool,
+                        (SELECT TOP 1 tt.tool 
+                         FROM ai_studio_task_catalog c WITH (NOLOCK) 
+                         LEFT JOIN ai_studio_tool_types tt WITH (NOLOCK) ON tt.task_type = c.task_type 
+                         WHERE c.task_type = @TaskType),
+                        'image'
+                    ),
+                    @AppId, @Priority, @FamilyRoleKeys,
                     @CreatedAt, @UpdatedAt
                 );";
 
@@ -352,7 +356,7 @@ namespace AIStudio.Api.Services
                        match_threshold as MatchThreshold, match_retries as MatchRetries,
                        gemini_base as GeminiBase, imgbb_upload_url as ImgbbUploadUrl, stale_min as StaleMin,
                        image_max_side as ImageMaxSide, image_quality as ImageQuality, heartbeat_sec as HeartbeatSec,
-                       fallback_sec as FallbackSec, updated_at as UpdatedAt
+                       fallback_sec as FallbackSec, worker_recycle_after_tasks as WorkerRecycleAfterTasks, updated_at as UpdatedAt
                 FROM ai_studio_settings WHERE id = 1;";
             return await conn.QuerySingleAsync<Setting>(sql);
         }
@@ -364,23 +368,32 @@ namespace AIStudio.Api.Services
             return await conn.QuerySingleAsync<Secret>(sql);
         }
 
+        // Single Unified Query - 0 N+1 Extra Round Trips
         public async Task<IEnumerable<AppInfo>> GetAppsAsync()
         {
             using var conn = CreateConnection();
-            string sqlApps = "SELECT app_id as AppId, label, enabled, sort, updated_at as UpdatedAt FROM ai_studio_apps ORDER BY sort ASC;";
-            var apps = (await conn.QueryAsync<AppInfo>(sqlApps)).ToList();
+            string sql = @"
+                SELECT a.app_id as AppId, a.label, a.enabled, a.sort, a.updated_at as UpdatedAt,
+                       COALESCE((
+                           SELECT STRING_AGG(m.task_type, ',')
+                           FROM ai_studio_app_tasks m WITH (NOLOCK)
+                           WHERE m.app_id = a.app_id
+                       ), '') as TaskTypesCsv
+                FROM ai_studio_apps a WITH (NOLOCK)
+                ORDER BY a.sort ASC;";
 
-            string sqlLinks = "SELECT app_id, task_type FROM ai_studio_app_tasks;";
-            var links = await conn.QueryAsync<(string AppId, string TaskType)>(sqlLinks);
-            var group = links.GroupBy(x => x.AppId).ToDictionary(g => g.Key, g => g.Select(x => x.TaskType).ToList());
-
-            foreach (var a in apps)
+            var rows = await conn.QueryAsync(sql);
+            return rows.Select(r => new AppInfo
             {
-                if (group.TryGetValue(a.AppId, out var types))
-                    a.TaskTypes = types;
-            }
-
-            return apps;
+                AppId = (string)r.AppId,
+                Label = (string)r.label,
+                Enabled = (bool)r.enabled,
+                Sort = (int)r.sort,
+                UpdatedAt = (DateTimeOffset)r.UpdatedAt,
+                TaskTypes = string.IsNullOrEmpty((string)r.TaskTypesCsv) 
+                    ? new List<string>() 
+                    : ((string)r.TaskTypesCsv).Split(',').ToList()
+            });
         }
 
         public async Task<IEnumerable<WorkerLoad>> GetWorkerLoadsAsync()

@@ -29,7 +29,7 @@
             <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
                 <button onclick="setApiPreset('http://localhost:5005')" class="text-stone-400 hover:text-white underline">Local (5005)</button>
                 <span class="text-stone-600">•</span>
-                <button onclick="setApiPreset('https://pilot-zealand-subject-guitars.trycloudflare.com')" class="text-amber-400 hover:text-amber-300 underline font-medium">Cloudflare Live Tunnel (Active)</button>
+                <button onclick="setApiPreset('https://aistudio.runasp.net')" class="text-amber-400 hover:text-amber-300 underline font-medium">Live API (MonsterASP HTTPS)</button>
                 <span class="text-stone-600">•</span>
                 <button onclick="setApiPreset('https://aistudio-api.loca.lt')" class="text-stone-400 hover:text-white underline">Localtunnel</button>
             </div>
@@ -78,7 +78,7 @@
             const saved = localStorage.getItem('aistudio_api_url');
             if (saved) return saved;
             if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                return 'https://pilot-zealand-subject-guitars.trycloudflare.com';
+                return 'https://aistudio.runasp.net';
             }
             return 'http://localhost:5005';
         }

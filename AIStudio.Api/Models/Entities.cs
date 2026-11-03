@@ -108,6 +108,7 @@ namespace AIStudio.Api.Models
         public decimal ImageQuality { get; set; } = 0.85m;
         public int HeartbeatSec { get; set; } = 30;
         public int FallbackSec { get; set; } = 600;
+        public int WorkerRecycleAfterTasks { get; set; } = 50;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 

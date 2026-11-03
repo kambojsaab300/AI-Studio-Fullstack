@@ -9,6 +9,7 @@ using AIStudio.Api.Models;
 using AIStudio.Api.Services;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AIStudio.Api.Controllers
 {
@@ -16,10 +17,12 @@ namespace AIStudio.Api.Controllers
     public class RpcController : ControllerBase
     {
         private readonly DatabaseService _db;
+        private readonly IMemoryCache _cache;
 
-        public RpcController(DatabaseService db)
+        public RpcController(DatabaseService db, IMemoryCache cache)
         {
             _db = db;
+            _cache = cache;
         }
 
         private static string? GetStr(JsonElement el, string prop, string? fallback = null)
@@ -152,7 +155,6 @@ namespace AIStudio.Api.Controllers
                         long id = GetLong(body, "p_id", GetLong(body, "id"));
                         string workerId = GetStr(body, "p_worker_id") ?? GetStr(body, "worker_id") ?? "";
                         bool claimed = await _db.ClaimTaskAsync(id, workerId);
-                        // Worker checks: (data || []).length > 0 -> return array of claimed tasks!
                         if (claimed)
                             return Ok(new[] { new { id = id } });
                         return Ok(new object[0]);
@@ -179,7 +181,6 @@ namespace AIStudio.Api.Controllers
                             processMs = pm.GetInt32();
 
                         bool completed = await _db.CompleteTaskAsync(id, workerId, status, outputImageUrl, outputImageUrls, outputText, matchScore, error, processMs);
-                        // Worker checks: if (!data || data.length === 0) log('ownership nahi mili');
                         if (completed)
                             return Ok(new[] { new { id = id } });
                         return Ok(new object[0]);
@@ -187,8 +188,12 @@ namespace AIStudio.Api.Controllers
 
                     case "get_task_catalog":
                     {
+                        // ⚡ 0ms Cached In-Memory Response
+                        if (_cache.TryGetValue("rpc_get_task_catalog", out var cachedCatalog))
+                            return Ok(cachedCatalog);
+
                         var catalog = await _db.GetCatalogAsync();
-                        return Ok(catalog.Select(c => new
+                        var result = catalog.Select(c => new
                         {
                             task_type = c.TaskType,
                             label = c.Label,
@@ -211,13 +216,20 @@ namespace AIStudio.Api.Controllers
                             sort = c.Sort,
                             tool = c.Tool,
                             enabled = c.Enabled
-                        }));
+                        }).ToList();
+
+                        _cache.Set("rpc_get_task_catalog", result, TimeSpan.FromMinutes(5));
+                        return Ok(result);
                     }
 
                     case "get_family_roles":
                     {
+                        // ⚡ 0ms Cached In-Memory Response
+                        if (_cache.TryGetValue("rpc_get_family_roles", out var cachedRoles))
+                            return Ok(cachedRoles);
+
                         var roles = await _db.GetFamilyRolesAsync();
-                        return Ok(roles.Where(r => r.Enabled).Select(r => new
+                        var result = roles.Where(r => r.Enabled).Select(r => new
                         {
                             role_key = r.RoleKey,
                             label_admin = r.LabelAdmin,
@@ -225,13 +237,20 @@ namespace AIStudio.Api.Controllers
                             prompt_text = r.PromptText,
                             sort_order = r.SortOrder,
                             enabled = r.Enabled
-                        }));
+                        }).ToList();
+
+                        _cache.Set("rpc_get_family_roles", result, TimeSpan.FromMinutes(10));
+                        return Ok(result);
                     }
 
                     case "get_model_list":
                     {
+                        // ⚡ 0ms Cached In-Memory Response
+                        if (_cache.TryGetValue("rpc_get_model_list", out var cachedModels))
+                            return Ok(cachedModels);
+
                         var models = await _db.GetModelsAsync();
-                        return Ok(models.Select(m => new
+                        var result = models.Select(m => new
                         {
                             model_id = m.ModelId,
                             kind = m.Kind,
@@ -239,26 +258,39 @@ namespace AIStudio.Api.Controllers
                             aspects = string.IsNullOrEmpty(m.Aspects) ? new string[0] : JsonSerializer.Deserialize<string[]>(m.Aspects),
                             sizes = string.IsNullOrEmpty(m.Sizes) ? new string[0] : JsonSerializer.Deserialize<string[]>(m.Sizes),
                             enabled = m.Enabled
-                        }));
+                        }).ToList();
+
+                        _cache.Set("rpc_get_model_list", result, TimeSpan.FromMinutes(10));
+                        return Ok(result);
                     }
 
                     case "get_app_list":
                     {
+                        // ⚡ 0ms Cached In-Memory Response
+                        if (_cache.TryGetValue("rpc_get_app_list", out var cachedApps))
+                            return Ok(cachedApps);
+
                         var apps = await _db.GetAppsAsync();
-                        return Ok(apps.Where(a => a.Enabled).Select(a => new
+                        var result = apps.Where(a => a.Enabled).Select(a => new
                         {
                             app_id = a.AppId,
                             label = a.Label,
                             sort = a.Sort,
                             task_types = a.TaskTypes
-                        }));
+                        }).ToList();
+
+                        _cache.Set("rpc_get_app_list", result, TimeSpan.FromMinutes(5));
+                        return Ok(result);
                     }
 
                     case "get_task_prompts":
                     {
-                        // Worker expects ARRAY of objects: prompts.map(p => [p.task_type, p])
+                        // ⚡ 0ms Cached In-Memory Response
+                        if (_cache.TryGetValue("rpc_get_task_prompts", out var cachedPrompts))
+                            return Ok(cachedPrompts);
+
                         var prompts = await _db.GetPromptsAsync();
-                        return Ok(prompts.Where(p => p.Enabled).Select(p => new
+                        var result = prompts.Where(p => p.Enabled).Select(p => new
                         {
                             task_type = p.TaskType,
                             system_text = p.SystemText,
@@ -266,7 +298,10 @@ namespace AIStudio.Api.Controllers
                             negative_text = p.NegativeText,
                             prompt_version = p.PromptVersion,
                             enabled = p.Enabled
-                        }));
+                        }).ToList();
+
+                        _cache.Set("rpc_get_task_prompts", result, TimeSpan.FromMinutes(10));
+                        return Ok(result);
                     }
 
                     case "get_worker_config":
@@ -314,7 +349,8 @@ namespace AIStudio.Api.Controllers
                             image_max_side = s.ImageMaxSide,
                             image_quality = s.ImageQuality,
                             heartbeat_sec = s.HeartbeatSec,
-                            fallback_sec = s.FallbackSec
+                            fallback_sec = s.FallbackSec,
+                            worker_recycle_after_tasks = s.WorkerRecycleAfterTasks <= 0 ? 50 : s.WorkerRecycleAfterTasks
                         });
                     }
 
