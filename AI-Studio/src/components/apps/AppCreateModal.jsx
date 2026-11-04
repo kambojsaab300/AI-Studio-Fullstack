@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { X, Plus, Shield, Loader2, Check } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function AppCreateModal({ isOpen, onClose, onCreated }) {
     const { sb, catalog, loadCatalog, setMsg } = useAdmin();
+    const t = useT();
     const [appId, setAppId] = useState('');
     const [label, setLabel] = useState('');
     const [enabled, setEnabled] = useState(true);
@@ -18,8 +20,8 @@ export function AppCreateModal({ isOpen, onClose, onCreated }) {
         const cleanId = appId.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
         const cleanLabel = label.trim();
 
-        if (!cleanId) return setMsg('App ID / Slug zaroori hai (e.g. myntra_studio)');
-        if (!cleanLabel) return setMsg('App Display Label zaroori hai');
+        if (!cleanId) return setMsg(t('App ID / Slug zaroori hai (e.g. myntra_studio)', 'App ID / Slug is required (e.g. myntra_studio)'));
+        if (!cleanLabel) return setMsg(t('App Display Label zaroori hai', 'App Display Label is required'));
 
         setLoading(true);
         try {
@@ -48,7 +50,7 @@ export function AppCreateModal({ isOpen, onClose, onCreated }) {
             }
 
             await loadCatalog();
-            setMsg(`✨ App "${cleanLabel}" successfully ban gayi!`);
+            setMsg(t(`✨ App "${cleanLabel}" successfully ban gayi!`, `✨ App "${cleanLabel}" created successfully!`));
             if (onCreated) onCreated(cleanId);
             onClose();
         } catch (err) {

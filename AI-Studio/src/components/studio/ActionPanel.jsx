@@ -1,7 +1,9 @@
 import React from 'react';
 import { Sparkles, ArrowUpRight, AlertCircle, Check, Loader2 } from 'lucide-react';
+import { useT } from '../../i18n/lang';
 
 export function ActionPanel({ problems, isGenerating, btnFeedback, onClearFeedback, onSendTask }) {
+    const t = useT();
     const hasProblems = problems && problems.length > 0;
 
     return (
@@ -11,7 +13,7 @@ export function ActionPanel({ problems, isGenerating, btnFeedback, onClearFeedba
                 <div className="bg-amber-400/10 border border-amber-400/25 rounded-xl p-3 space-y-1.5 animate-fadeIn">
                     <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
                         <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        Task dispatch karne ke liye ye zaroori hai:
+                        {t('Task dispatch karne ke liye ye zaroori hai:', 'Required before dispatching the task:')}
                     </p>
                     <div className="space-y-1 pl-5">
                         {problems.map((p, i) => (
@@ -52,12 +54,12 @@ export function ActionPanel({ problems, isGenerating, btnFeedback, onClearFeedba
             <button
                 type="button"
                 onClick={onSendTask}
-                disabled={isGenerating || hasProblems}
+                disabled={isGenerating}
                 className={`w-full h-11 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-lg transition-all ${
-                    hasProblems 
-                        ? 'bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed opacity-70 shadow-none' 
-                        : isGenerating 
-                            ? 'bg-amber-400/60 text-slate-900 cursor-wait' 
+                    isGenerating 
+                        ? 'bg-amber-400/60 text-slate-900 cursor-wait' 
+                        : hasProblems
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25 active:scale-98'
                             : 'bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 text-slate-950 shadow-amber-400/20 active:scale-98'
                 }`}
             >

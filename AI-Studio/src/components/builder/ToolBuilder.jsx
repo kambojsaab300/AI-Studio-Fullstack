@@ -4,9 +4,11 @@ import { useAdmin } from '../../context/AdminContext';
 import { SchemaPreview } from './SchemaPreview';
 import { TOOL_CATEGORIES, getToolCategory } from '../../constants/categories';
 import { TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function ToolBuilder() {
     const { sb, catalog, prompts, loadCatalog, loadConfig, setMsg } = useAdmin();
+    const t = useT();
 
     const [builderForm, setBuilderForm] = useState({
         mode: 'new', // 'new' | 'edit'
@@ -86,10 +88,10 @@ export function ToolBuilder() {
     const optional = [];
 
     const handleSaveTool = async () => {
-        if (!builderForm.task_type.trim()) return setMsg('Tool Slug (task_type) zaroori hai');
-        if (!builderForm.label.trim()) return setMsg('Display Label zaroori hai');
-        if (!builderForm.system_text.trim()) return setMsg('System Prompt zaroori hai');
-        if (!builderForm.role_text.trim()) return setMsg('Role Prompt zaroori hai');
+        if (!builderForm.task_type.trim()) return setMsg(t('Tool Slug (task_type) zaroori hai', 'Tool Slug (task_type) is required'));
+        if (!builderForm.label.trim()) return setMsg(t('Display Label zaroori hai', 'Display Label is required'));
+        if (!builderForm.system_text.trim()) return setMsg(t('System Prompt zaroori hai', 'System Prompt is required'));
+        if (!builderForm.role_text.trim()) return setMsg(t('Role Prompt zaroori hai', 'Role Prompt is required'));
 
         setSaving(true);
         setSavedMsg('');

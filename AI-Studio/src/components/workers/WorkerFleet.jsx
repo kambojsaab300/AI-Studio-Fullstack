@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Users, Pause, Play, RefreshCw, Trash2, RotateCcw } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { API, TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function WorkerFleet() {
     const { sb, workers, workerLoad, loadWorkers, setMsg } = useAdmin();
+    const t = useT();
     const [view, setView] = useState('active'); // 'active' | 'offline' | 'all'
 
     const activeIds = new Set((workerLoad || []).map(l => l.worker_id));
@@ -25,14 +27,19 @@ export function WorkerFleet() {
     };
 
     const cleanupTasks = async (kind, workerId = null) => {
-        const who = workerId ? `Worker ${workerId}` : 'Har worker';
-        const what = kind === 'release' ? 'ke phashe tasks wapas pending karna hai' : 'ke failed tasks delete karne hain';
-        if (!window.confirm(`${who} ${what}. Pakka karna hai?`)) return;
+        const who = workerId ? `Worker ${workerId}` : t('Har worker', 'All workers');
+        const what = kind === 'release'
+            ? t('ke phashe tasks wapas pending karna hai', 'stuck tasks will be moved back to pending')
+            : t('ke failed tasks delete karne hain', 'failed tasks will be deleted');
+        if (!window.confirm(t(`${who} ${what}. Pakka karna hai?`, `${who}: ${what}. Are you sure?`))) return;
 
         const fn = kind === 'release' ? API.RELEASE_TASKS : API.CLEAR_FAILED;
         const { data, error } = await sb.rpc(fn, { p_worker_id: workerId || null });
         if (error) return setMsg('Clean-up error: ' + error.message);
-        setMsg(`${data} task ${kind === 'release' ? 'wapas pending mein gaye' : 'delete ho gaye'}`);
+        setMsg(t(
+            `${data} task ${kind === 'release' ? 'wapas pending mein gaye' : 'delete ho gaye'}`,
+            `${data} task(s) ${kind === 'release' ? 'moved back to pending' : 'deleted'}`
+        ));
         loadWorkers();
     };
 

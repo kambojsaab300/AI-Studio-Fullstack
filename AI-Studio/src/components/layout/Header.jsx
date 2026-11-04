@@ -2,6 +2,7 @@ import React from 'react';
 import { Shield, LogOut } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { NavTabs } from './NavTabs';
+import { LangToggle } from '../../i18n/lang';
 
 export function Header() {
     const { sb, email, screen, setScreen } = useAdmin();
@@ -36,6 +37,7 @@ export function Header() {
 
                 {/* Right User Controls */}
                 <div className="flex items-center gap-2 shrink-0">
+                    <LangToggle />
                     <span className="text-stone-400 text-[11px] font-mono hidden lg:inline max-w-[140px] truncate" title={email}>
                         {email}
                     </span>

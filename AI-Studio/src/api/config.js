@@ -3,7 +3,24 @@
 // Powered by .NET Core 9 Web API & MonsterASP IIS
 // ============================================================
 
-export const API_URL = "https://aistudio.runasp.net";
+// Dynamic API URL resolver: automatically switches between local .NET API (port 5005)
+// and production MonsterASP API (https://aistudio.runasp.net), or reads from localStorage override.
+export const getApiUrl = () => {
+    if (typeof window !== 'undefined') {
+        const customUrl = localStorage.getItem('aistudio_api_url');
+        if (customUrl) return customUrl.replace(/\/$/, '');
+        // When running Vite dev or preview locally, route directly to local .NET API
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return 'http://localhost:5005';
+        }
+        if (window.location.origin && window.location.origin.includes('runasp.net')) {
+            return window.location.origin;
+        }
+    }
+    return 'https://aistudio.runasp.net';
+};
+
+export const API_URL = getApiUrl();
 export const API_KEY = "aistudio_admin_local_key";
 
 export const CLOUDINARY_CLOUD_NAME = "draaqjcre";

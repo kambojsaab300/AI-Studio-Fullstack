@@ -3,6 +3,8 @@ import {
     Sparkles, LogIn, LogOut, Send, RefreshCw, Download, AlertCircle, CheckCircle2, 
     Clock, Upload, UserPlus, MessageSquare, Database, Terminal, Copy, Check, X 
 } from 'lucide-react';
+import { BackendUrlField } from '../src/components/common/BackendUrlField';
+import { useT, LangToggle, getLang } from '../src/i18n/lang';
 
 // ============================================================
 // AI Studio: .NET Core API Client (Standalone Inline Adapter)
@@ -154,6 +156,9 @@ function getEffectiveApiUrl(providedUrl) {
                 }
             }
         } catch { }
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return 'http://localhost:5005';
+        }
         if (providedUrl) {
             return providedUrl.replace(/\/$/, "");
         }
@@ -184,7 +189,7 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
                         body: JSON.stringify({ email, password })
                     });
                     const json = await res.json();
-                    if (!res.ok) return { data: null, error: { message: json.error || 'Login fail hua.' } };
+                    if (!res.ok) return { data: null, error: { message: json.error || (getLang() === 'en' ? 'Login failed.' : 'Login fail hua.') } };
                     token = json.access_token;
                     currentUser = json.user;
                     try {
@@ -211,7 +216,7 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
                         body: JSON.stringify({ email, password })
                     });
                     const json = await res.json();
-                    if (!res.ok) return { data: null, error: { message: json.error || 'Signup fail hua.' } };
+                    if (!res.ok) return { data: null, error: { message: json.error || (getLang() === 'en' ? 'Signup failed.' : 'Signup fail hua.') } };
                     token = json.access_token;
                     currentUser = json.user;
                     try {
@@ -374,24 +379,25 @@ function toKinds(rows) {
     (rows || []).filter(r => r.customer_visible).forEach(r => { out[r.task_type] = toKind(r); });
     return out;
 }
-const INPUT_LABEL = { face: 'Apna chehra (face) ki photo', style: 'Style / kapde / scene ki photo', input: 'Photo' };
+const INPUT_LABEL = { face: { hi: 'Apna chehra (face) ki photo', en: 'Your face photo' }, style: { hi: 'Style / kapde / scene ki photo', en: 'Style / outfit / scene photo' }, input: { hi: 'Photo', en: 'Photo' } };
 const INPUT_COLUMN = { face: 'face_image_url', style: 'style_image_url', input: 'input_image_url' };
 // Name of an input for this kind (person and product kinds name them differently)
-const labelFor = (kind, key) => kind.labels?.[key] || INPUT_LABEL[key];
+const labelFor = (kind, key, t) => kind.labels?.[key] || (INPUT_LABEL[key] && t(INPUT_LABEL[key].hi, INPUT_LABEL[key].en));
 
 
 // Upload a picture that is already in data-URL form (the brush mask)
-async function uploadDataUrl(dataUrl) {
+async function uploadDataUrl(dataUrl, t) {
     const fd = new FormData();
     fd.append('file', dataUrl);
     fd.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     const data = await (await fetch(CLOUDINARY_UPLOAD_URL, { method: 'POST', body: fd })).json();
-    if (!data.secure_url) throw new Error(data.error?.message || 'Mask upload nahi hui');
+    if (!data.secure_url) throw new Error(data.error?.message || t('Mask upload nahi hui', 'Mask upload failed'));
     return data.secure_url;
 }
 
 // Brush: paint over the photo. Painted area = red. Save gives a black/red mask (red = the area to edit).
 function MaskEditor({ src, onSave }) {
+    const t = useT();
     const imgRef = useRef(null);
     const canvasRef = useRef(null);
     const drawing = useRef(false);
@@ -475,7 +481,7 @@ function MaskEditor({ src, onSave }) {
                 <label className="flex items-center gap-2">Brush <input type="range" min={4} max={200} value={size} onChange={e => setSize(Number(e.target.value))} /> {size}px</label>
                 <button type="button" onClick={undo} className="h-9 px-3 rounded-xl border border-white/10 bg-stone-800 font-bold">Undo</button>
                 <button type="button" onClick={clear} className="h-9 px-3 rounded-xl border border-white/10 bg-stone-800 font-bold">Clear</button>
-                <button type="button" onClick={save} className="h-9 px-3 rounded-xl bg-yellow-400 text-stone-950 font-black">Area pakka karo</button>
+                <button type="button" onClick={save} className="h-9 px-3 rounded-xl bg-yellow-400 text-stone-950 font-black">{t('Area pakka karo', 'Confirm area')}</button>
             </div>
         </div>
     );
@@ -483,35 +489,36 @@ function MaskEditor({ src, onSave }) {
 
 // The mask part of an edit form: the photo with the brush over it
 function MaskBlock({ label, photoUrl, maskUrl, onSave }) {
+    const t = useT();
     return (
         <div className="space-y-1.5">
             <p className="text-xs font-bold text-stone-200">{label}</p>
             {!photoUrl ? (
-                <p className="text-[11px] text-stone-400">Pehle upar edit wali photo ka link ya upload karo.</p>
+                <p className="text-[11px] text-stone-400">{t('Pehle upar edit wali photo ka link ya upload karo.', 'First upload or paste the link of the photo to edit above.')}</p>
             ) : (
                 <MaskEditor key={photoUrl} src={photoUrl} onSave={onSave} />
             )}
-            {maskUrl && <p className="text-[11px] text-emerald-300">Area save ho gaya. Photo badlo to area dobara pakka karo.</p>}
+            {maskUrl && <p className="text-[11px] text-emerald-300">{t('Area save ho gaya. Photo badlo to area dobara pakka karo.', 'Area saved. If you change the photo, confirm the area again.')}</p>}
         </div>
     );
 }
 
 // How the customer sees the status
 const STATUS_TEXT = {
-    pending: { text: 'Queue mein hai', icon: Clock, cls: 'text-stone-300 bg-stone-800 border-white/10' },
-    processing: { text: 'Ban raha hai...', icon: RefreshCw, cls: 'text-sky-300 bg-sky-500/10 border-sky-500/30' },
-    done: { text: 'Tayyar hai', icon: CheckCircle2, cls: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' },
-    failed: { text: 'Problem aayi', icon: AlertCircle, cls: 'text-rose-300 bg-rose-500/10 border-rose-500/30' }
+    pending: { text: 'Queue mein hai', en: 'Queued', icon: Clock, cls: 'text-stone-300 bg-stone-800 border-white/10' },
+    processing: { text: 'Ban raha hai...', en: 'Processing...', icon: RefreshCw, cls: 'text-sky-300 bg-sky-500/10 border-sky-500/30' },
+    done: { text: 'Tayyar hai', en: 'Ready', icon: CheckCircle2, cls: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' },
+    failed: { text: 'Problem aayi', en: 'Problem occurred', icon: AlertCircle, cls: 'text-rose-300 bg-rose-500/10 border-rose-500/30' }
 };
 
 // Makes a photo smaller before it is uploaded: at most 2048 px, JPEG, white behind any transparent part
-function compressFile(file) {
+function compressFile(file, t) {
     return new Promise((resolve, reject) => {
         const r = new FileReader();
         r.onerror = reject;
         r.onload = () => {
             const img = new Image();
-            img.onerror = () => reject(new Error('Photo padh nahi paayi'));
+            img.onerror = () => reject(new Error(t('Photo padh nahi paayi', 'Could not read the photo')));
             img.onload = () => {
                 const k = Math.min(1, 2048 / Math.max(img.naturalWidth, img.naturalHeight));
                 const c = document.createElement('canvas');
@@ -529,13 +536,13 @@ function compressFile(file) {
     });
 }
 
-async function uploadFile(file) {
-    const dataUrl = await compressFile(file);
+async function uploadFile(file, t) {
+    const dataUrl = await compressFile(file, t);
     const fd = new FormData();
     fd.append('file', dataUrl);
     fd.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     const data = await (await fetch(CLOUDINARY_UPLOAD_URL, { method: 'POST', body: fd })).json();
-    if (!data.secure_url) throw new Error(data.error?.message || 'Photo upload nahi hui');
+    if (!data.secure_url) throw new Error(data.error?.message || t('Photo upload nahi hui', 'Photo upload failed'));
     return data.secure_url;
 }
 
@@ -580,6 +587,7 @@ const COMBO_5_POSES = [
 const EMPTY = { task_type: 'image_to_image_prompt', prompt: '', aspect_ratio: '4:5', image_size: '2K', batch_count: 1, face_image_url: '', style_image_url: '', input_image_url: '', extra_image_urls: '', family_urls: ['', '', '', '', '', ''], conversation_id: '' };
 
 export default function AiStudioCustomer() {
+    const t = useT();
     const [anonKey, setAnonKey] = useState(API_KEY);
     const [sb, setSb] = useState(null);
     const [session, setSession] = useState(null);
@@ -711,17 +719,17 @@ export default function AiStudioCustomer() {
     const problems = useMemo(() => {
         const p = [];
         for (const key of kind.inputs) {
-            if (!kind.optional?.includes(key) && !form[INPUT_COLUMN[key]].trim()) p.push(`${labelFor(kind, key)} daalo`);
+            if (!kind.optional?.includes(key) && !form[INPUT_COLUMN[key]].trim()) p.push(t(`${labelFor(kind, key, t)} daalo`, `Add ${labelFor(kind, key, t)}`));
         }
-        if (kind.promptRequired && !form.prompt.trim()) p.push('Prompt likho');
-        if (kind.family && form.family_urls.filter(u => u.trim()).length < 2) p.push('Parivar ki kam se kam 2 photos daalo');
-        if (form.batch_count < 1 || form.batch_count > 10) p.push('Photos 1 se 10 ke beech chuno');
+        if (kind.promptRequired && !form.prompt.trim()) p.push(t('Prompt likho', 'Write a prompt'));
+        if (kind.family && form.family_urls.filter(u => u.trim()).length < 2) p.push(t('Parivar ki kam se kam 2 photos daalo', 'Add at least 2 family photos'));
+        if (form.batch_count < 1 || form.batch_count > 10) p.push(t('Photos 1 se 10 ke beech chuno', 'Choose between 1 and 10 photos'));
         return p;
-    }, [form, kind]);
+    }, [form, kind, t]);
 
     // ── Connect + session ──
     const connect = () => {
-        if (!anonKey) return setMsg('Pehle app ki key daalo');
+        if (!anonKey) return setMsg(t('Pehle app ki key daalo', 'First enter the app key'));
         loadClient(anonKey).then(client => setSb(client)).catch(err => setMsg('Connect error: ' + err.message));
     };
 
@@ -735,7 +743,7 @@ export default function AiStudioCustomer() {
     const signIn = async () => {
         setAuthMsg('');
         const { error } = await sb.auth.signInWithPassword({ email, password });
-        if (error) setAuthMsg('Login nahi hua: ' + error.message);
+        if (error) setAuthMsg(t('Login nahi hua: ' + error.message, 'Login failed: ' + error.message));
         setPassword('');
     };
 
@@ -743,14 +751,14 @@ export default function AiStudioCustomer() {
     const guestIn = async () => {
         setAuthMsg('');
         const { error } = await sb.auth.signInAnonymously();
-        if (error) setAuthMsg('Bina email login nahi hua: ' + error.message);
+        if (error) setAuthMsg(t('Bina email login nahi hua: ' + error.message, 'Login without email failed: ' + error.message));
     };
 
     const signUp = async () => {
         setAuthMsg('');
         const { error } = await sb.auth.signUp({ email, password });
-        if (error) return setAuthMsg('Account nahi bana: ' + error.message);
-        setAuthMsg('Account ban gaya. Agar email verify karna ho to email check karo, phir login karo.');
+        if (error) return setAuthMsg(t('Account nahi bana: ' + error.message, 'Could not create account: ' + error.message));
+        setAuthMsg(t('Account ban gaya. Agar email verify karna ho to email check karo, phir login karo.', 'Account created. If email verification is needed, check your email, then log in.'));
         setMode('login');
         setPassword('');
     };
@@ -792,13 +800,13 @@ export default function AiStudioCustomer() {
     const pickExtraFiles = async (e) => {
         const files = Array.from(e.target.files || []).slice(0, 10);
         if (!files.length) return;
-        setMsg(`${files.length} photo upload ho rahi hai...`);
+        setMsg(t(`${files.length} photo upload ho rahi hai...`, `Uploading ${files.length} photos...`));
         try {
             const urls = [];
-            for (const f of files) urls.push(await uploadFile(f));
+            for (const f of files) urls.push(await uploadFile(f, t));
             const current = form.extra_image_urls.split('\n').map(s => s.trim()).filter(Boolean);
             setField('extra_image_urls', [...current, ...urls].slice(0, 10).join('\n'));
-            setMsg('Photos upload ho gayi');
+            setMsg(t('Photos upload ho gayi', 'Photos uploaded'));
         } catch (err) {
             setMsg('Upload error: ' + err.message);
         }
@@ -809,10 +817,10 @@ export default function AiStudioCustomer() {
     const pickFamilyFile = async (e, i) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        setMsg('Photo upload ho rahi hai...');
+        setMsg(t('Photo upload ho rahi hai...', 'Uploading photo...'));
         try {
-            setFamilyUrl(i, await uploadFile(file));
-            setMsg('Photo upload ho gayi');
+            setFamilyUrl(i, await uploadFile(file, t));
+            setMsg(t('Photo upload ho gayi', 'Photo uploaded'));
         } catch (err) {
             setMsg('Upload error: ' + err.message);
         }
@@ -820,12 +828,12 @@ export default function AiStudioCustomer() {
 
     // The brush mask is uploaded, then its link goes into the form
     const saveMask = async (dataUrl) => {
-        setMsg('Area upload ho raha hai...');
+        setMsg(t('Area upload ho raha hai...', 'Uploading area...'));
         try {
-            setField('style_image_url', await uploadDataUrl(dataUrl));
-            setMsg('Area save ho gaya');
+            setField('style_image_url', await uploadDataUrl(dataUrl, t));
+            setMsg(t('Area save ho gaya', 'Area saved'));
         } catch (err) {
-            setMsg('Area upload nahi hua: ' + err.message);
+            setMsg(t('Area upload nahi hua: ' + err.message, 'Area upload failed: ' + err.message));
         }
     };
 
@@ -833,11 +841,11 @@ export default function AiStudioCustomer() {
         const file = e.target.files?.[0];
         e.target.value = '';
         if (!file) return;
-        setMsg('Photo upload ho rahi hai...');
+        setMsg(t('Photo upload ho rahi hai...', 'Uploading photo...'));
         try {
-            const url = await uploadFile(file);
+            const url = await uploadFile(file, t);
             setField(field, url);
-            setMsg('Photo upload ho gayi');
+            setMsg(t('Photo upload ho gayi', 'Photo uploaded'));
         } catch (err) {
             setMsg('Upload error: ' + err.message);
         }
@@ -892,8 +900,8 @@ export default function AiStudioCustomer() {
         };
         const { error } = await sb.rpc(API.CREATE_TASK, { p_payload: row });
         setSending(false);
-        if (error) return setMsg('Kaam nahi bana: ' + error.message);
-        setMsg('Aapka kaam le liya gaya. Tayyar hone par yahin dikhega.');
+        if (error) return setMsg(t('Kaam nahi bana: ' + error.message, 'Could not create task: ' + error.message));
+        setMsg(t('Aapka kaam le liya gaya. Tayyar hone par yahin dikhega.', 'Your task has been received. It will show here when it is ready.'));
         setForm(f => ({ ...f, prompt: '' }));
         setScreen('mine');
         loadMine();
@@ -904,8 +912,9 @@ export default function AiStudioCustomer() {
         return (
             <div className="min-h-screen bg-stone-950 text-stone-100 flex items-center justify-center p-4">
                 <div className="w-full max-w-md bg-stone-900 border border-white/10 rounded-2xl p-6 space-y-4">
+                    <div className="flex justify-end"><LangToggle /></div>
                     <h1 className="text-lg font-extrabold flex items-center gap-2"><Sparkles className="w-5 h-5 text-yellow-300" /> AI Studio</h1>
-                    <button onClick={connect} className="w-full h-10 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black">Shuru karo</button>
+                    <button onClick={connect} className="w-full h-10 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black">{t('Shuru karo', 'Start')}</button>
                     {msg && <p className="text-xs text-yellow-200">{msg}</p>}
                 </div>
             </div>
@@ -916,17 +925,19 @@ export default function AiStudioCustomer() {
         return (
             <div className="min-h-screen bg-stone-950 text-stone-100 flex items-center justify-center p-4">
                 <div className="w-full max-w-md bg-stone-900 border border-white/10 rounded-2xl p-6 space-y-4">
-                    <h1 className="text-lg font-extrabold flex items-center gap-2"><Sparkles className="w-5 h-5 text-yellow-300" /> {mode === 'login' ? 'Login' : 'Naya account'}</h1>
+                    <div className="flex justify-end"><LangToggle /></div>
+                    <h1 className="text-lg font-extrabold flex items-center gap-2"><Sparkles className="w-5 h-5 text-yellow-300" /> {mode === 'login' ? 'Login' : t('Naya account', 'New account')}</h1>
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className="w-full h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
                     <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="w-full h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
                     {mode === 'login'
                         ? <button onClick={signIn} className="w-full h-10 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black flex items-center justify-center gap-2"><LogIn className="w-4 h-4" /> Login</button>
-                        : <button onClick={signUp} className="w-full h-10 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black flex items-center justify-center gap-2"><UserPlus className="w-4 h-4" /> Account banao</button>}
-                    <button onClick={guestIn} className="w-full h-10 border border-white/10 bg-stone-800 rounded-xl text-xs font-bold">Bina email ke andar jaao</button>
+                        : <button onClick={signUp} className="w-full h-10 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black flex items-center justify-center gap-2"><UserPlus className="w-4 h-4" /> {t('Account banao', 'Create account')}</button>}
+                    <button onClick={guestIn} className="w-full h-10 border border-white/10 bg-stone-800 rounded-xl text-xs font-bold">{t('Bina email ke andar jaao', 'Continue without email')}</button>
                     <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setAuthMsg(''); }} className="w-full text-xs text-stone-400 underline">
-                        {mode === 'login' ? 'Naya account banana hai?' : 'Pehle se account hai? Login karo'}
+                        {mode === 'login' ? t('Naya account banana hai?', 'New here? Create an account') : t('Pehle se account hai? Login karo', 'Already have an account? Log in')}
                     </button>
                     {authMsg && <p className="text-xs text-yellow-200">{authMsg}</p>}
+                    <BackendUrlField />
                 </div>
             </div>
         );
@@ -977,8 +988,9 @@ export default function AiStudioCustomer() {
                 )}
 
                 <div className="flex items-center gap-2">
-                    <button onClick={() => setScreen('new')} className={`h-9 px-4 rounded-xl text-xs font-bold border transition-colors ${screen === 'new' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300 hover:text-white'}`}>Naya kaam</button>
-                    <button onClick={() => setScreen('mine')} className={`h-9 px-4 rounded-xl text-xs font-bold border transition-colors ${screen === 'mine' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300 hover:text-white'}`}>Mere results</button>
+                    <LangToggle />
+                    <button onClick={() => setScreen('new')} className={`h-9 px-4 rounded-xl text-xs font-bold border transition-colors ${screen === 'new' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300 hover:text-white'}`}>{t('Naya kaam', 'New task')}</button>
+                    <button onClick={() => setScreen('mine')} className={`h-9 px-4 rounded-xl text-xs font-bold border transition-colors ${screen === 'mine' ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300 hover:text-white'}`}>{t('Mere results', 'My results')}</button>
                     <button onClick={signOut} title="Logout" className="h-9 px-3 rounded-xl text-xs font-bold border border-white/10 bg-stone-900 hover:bg-rose-500/20 text-stone-300 hover:text-rose-300 flex items-center gap-1.5 transition-colors"><LogOut className="w-3.5 h-3.5" /></button>
                 </div>
             </header>
@@ -990,7 +1002,7 @@ export default function AiStudioCustomer() {
                 <section className="max-w-2xl bg-stone-900 border border-white/10 rounded-2xl p-5 space-y-4">
                     <div className="flex items-center justify-between border-b border-white/10 pb-3">
                         <div>
-                            <h2 className="text-sm font-extrabold text-white">Kya banwana hai?</h2>
+                            <h2 className="text-sm font-extrabold text-white">{t('Kya banwana hai?', 'What do you want to make?')}</h2>
                             <p className="text-[11px] text-stone-400">
                                 App: <span className="text-yellow-300 font-bold">{apps.find(a => a.app_id === appId)?.label || appId}</span> ({Object.keys(shownKinds).length} tools)
                             </p>
@@ -1011,19 +1023,19 @@ export default function AiStudioCustomer() {
                                     <h3 className="text-sm font-extrabold text-yellow-300">Suit Shop Studio (Virtual Model Try-On)</h3>
                                 </div>
                                 <p className="text-[11px] text-stone-300">
-                                    Apne suit/outfit ki photo upload karein, Model chun kar Front, Back, Side, Close-up, Upper, Down poses me photoshoot banwayein.
+                                    {t('Apne suit/outfit ki photo upload karein, Model chun kar Front, Back, Side, Close-up, Upper, Down poses me photoshoot banwayein.', 'Upload a photo of your suit/outfit, choose a model, and create a photoshoot in the Front, Back, Side, Close-up, Upper and Down poses.')}
                                 </p>
                             </div>
 
                             {/* 1. Model Category Selector */}
                             <div className="space-y-2">
-                                <p className="text-xs font-bold text-stone-200">1. Model Category Chunein (Kisko suit pehnana hai?)</p>
+                                <p className="text-xs font-bold text-stone-200">{t('1. Model Category Chunein (Kisko suit pehnana hai?)', '1. Choose model category (who will wear the suit?)')}</p>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                     {[
                                         { id: 'man', label: '👨 Man Model', sub: 'Men Suit / Blazer' },
                                         { id: 'woman', label: '👩 Woman Model', sub: 'Ladies Suit / Dress' },
                                         { id: 'kids', label: '🧒 Kids Model', sub: 'Boy / Girl Kids Suit' },
-                                        { id: 'custom', label: '📷 Custom Model', sub: 'Apna Model Upload' }
+                                        { id: 'custom', label: '📷 Custom Model', sub: t('Apna Model Upload', 'Upload your own model') }
                                     ].map(cat => (
                                         <button
                                             key={cat.id}
@@ -1070,9 +1082,9 @@ export default function AiStudioCustomer() {
 
                             {/* Model Photo Input (Custom or Override) */}
                             <div className="space-y-1.5">
-                                <p className="text-xs font-bold text-stone-200">{suitCategory === 'custom' ? 'Model ki Photo Upload Karein' : 'Selected Model Photo (Ya replace karein)'}</p>
+                                <p className="text-xs font-bold text-stone-200">{suitCategory === 'custom' ? t('Model ki Photo Upload Karein', 'Upload model photo') : t('Selected Model Photo (Ya replace karein)', 'Selected model photo (or replace it)')}</p>
                                 <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
-                                    <input value={form.face_image_url} onChange={e => setField('face_image_url', e.target.value)} placeholder="Model photo ka link ya upload karein" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <input value={form.face_image_url} onChange={e => setField('face_image_url', e.target.value)} placeholder={t('Model photo ka link ya upload karein', 'Model photo link or upload')}className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
                                     <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 border border-white/10 rounded-xl text-xs font-bold cursor-pointer transition-colors">
                                         <Upload className="w-3.5 h-3.5" /> Upload Model
                                         <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'face_image_url')} />
@@ -1084,13 +1096,13 @@ export default function AiStudioCustomer() {
                             {/* 2. Suit / Garment Upload Area */}
                             <div className="space-y-1.5 p-3.5 rounded-2xl bg-stone-950 border border-yellow-400/30">
                                 <p className="text-xs font-bold text-yellow-300 flex items-center gap-1.5">
-                                    <span>👔</span> 2. Aapke Suit / Outfit ki Photo (Zaroori)
+                                    <span>👔</span> {t('2. Aapke Suit / Outfit ki Photo (Zaroori)', '2. Your suit / outfit photo (required)')}
                                 </p>
-                                <p className="text-[11px] text-stone-400">Shop ke suit, blazer, kurti, coat-pant ya dress ki saaf photo upload karein:</p>
+                                <p className="text-[11px] text-stone-400">{t('Shop ke suit, blazer, kurti, coat-pant ya dress ki saaf photo upload karein:', 'Upload a clear photo of the shop suit, blazer, kurti, coat-pant or dress:')}</p>
                                 <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center pt-1">
-                                    <input value={form.style_image_url} onChange={e => setField('style_image_url', e.target.value)} placeholder="Suit photo link ya upload karein" className="h-10 bg-stone-900 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <input value={form.style_image_url} onChange={e => setField('style_image_url', e.target.value)} placeholder={t('Suit photo link ya upload karein', 'Suit photo link or upload')} className="h-10 bg-stone-900 border border-white/10 rounded-xl px-3 text-xs font-mono" />
                                     <label className="h-10 px-4 flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-stone-950 font-bold rounded-xl text-xs cursor-pointer transition-colors">
-                                        <Upload className="w-3.5 h-3.5" /> Suit Upload Karein
+                                        <Upload className="w-3.5 h-3.5" /> {t('Suit Upload Karein', 'Upload suit')}
                                         <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'style_image_url')} />
                                     </label>
                                 </div>
@@ -1105,7 +1117,7 @@ export default function AiStudioCustomer() {
                             {/* 3. Pose & Angle Selection */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
-                                    <p className="text-xs font-bold text-stone-200">3. Photoshoot Poses Chunein</p>
+                                    <p className="text-xs font-bold text-stone-200">{t('3. Photoshoot Poses Chunein', '3. Choose photoshoot poses')}</p>
                                     <span className="text-[11px] text-yellow-300 font-mono">
                                         {suitSelectedPose === 'all' ? '6 Photos (Batch)' : '1 Photo (Single Pose)'}
                                     </span>
@@ -1127,7 +1139,7 @@ export default function AiStudioCustomer() {
                                                     <span>{p.label}</span>
                                                     {isAct && <span className="text-[10px] bg-yellow-400 text-stone-950 px-1.5 py-0.5 rounded font-bold">Selected</span>}
                                                 </p>
-                                                <p className="text-[10px] text-stone-400 mt-0.5">{p.desc}</p>
+                                                <p className="text-[10px] text-stone-400 mt-0.5">{p.id === 'all' ? t('Front, Back, Side, Close-up, Upper, Down sab ek saath', 'Front, Back, Side, Close-up, Upper, Down all together') : p.desc}</p>
                                             </button>
                                         );
                                     })}
@@ -1143,15 +1155,15 @@ export default function AiStudioCustomer() {
                                     <h3 className="text-sm font-extrabold text-emerald-300">5-Pose Combo Catalog Studio</h3>
                                 </div>
                                 <p className="text-[11px] text-stone-300">
-                                    Photo upload karein aur 5 alag-alag commercial poses payein: Front view, Back view, Side view, Close-up macro detail, aur Upper body portrait.
+                                    {t('Photo upload karein aur 5 alag-alag commercial poses payein: Front view, Back view, Side view, Close-up macro detail, aur Upper body portrait.', 'Upload a photo and get 5 different commercial poses: Front view, Back view, Side view, Close-up macro detail, and Upper body portrait.')}
                                 </p>
                             </div>
 
                             {/* Person / Model Photo Input */}
                             <div className="space-y-1.5">
-                                <p className="text-xs font-bold text-stone-200">1. Person / Model ki Photo (Zaroori)</p>
+                                <p className="text-xs font-bold text-stone-200">{t('1. Person / Model ki Photo (Zaroori)', '1. Person / model photo (required)')}</p>
                                 <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
-                                    <input value={form.face_image_url} onChange={e => setField('face_image_url', e.target.value)} placeholder="Model / Person photo ka link ya upload karein" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <input value={form.face_image_url} onChange={e => setField('face_image_url', e.target.value)} placeholder={t('Model / Person photo ka link ya upload karein', 'Model / person photo link or upload')}className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
                                     <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 border border-white/10 rounded-xl text-xs font-bold cursor-pointer transition-colors">
                                         <Upload className="w-3.5 h-3.5" /> Upload Photo
                                         <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'face_image_url')} />
@@ -1162,9 +1174,9 @@ export default function AiStudioCustomer() {
 
                             {/* Outfit Photo (Optional) */}
                             <div className="space-y-1.5">
-                                <p className="text-xs font-bold text-stone-200">2. Outfit / Suit ki Photo (Optional - naye kapde pehnane ke liye)</p>
+                                <p className="text-xs font-bold text-stone-200">{t('2. Outfit / Suit ki Photo (Optional - naye kapde pehnane ke liye)', '2. Outfit / suit photo (optional - to dress in new clothes)')}</p>
                                 <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
-                                    <input value={form.style_image_url} onChange={e => setField('style_image_url', e.target.value)} placeholder="Outfit photo ka link ya upload karein (khali chhod sakte hain)" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
+                                    <input value={form.style_image_url} onChange={e => setField('style_image_url', e.target.value)} placeholder={t('Outfit photo ka link ya upload karein (khali chhod sakte hain)', 'Outfit photo link or upload (you can leave it empty)')}className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs font-mono" />
                                     <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 border border-white/10 rounded-xl text-xs font-bold cursor-pointer transition-colors">
                                         <Upload className="w-3.5 h-3.5" /> Upload Outfit
                                         <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, 'style_image_url')} />
@@ -1176,7 +1188,7 @@ export default function AiStudioCustomer() {
                             {/* Pose Selection */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
-                                    <p className="text-xs font-bold text-stone-200">3. Pose Mode Chunein</p>
+                                    <p className="text-xs font-bold text-stone-200">{t('3. Pose Mode Chunein', '3. Choose pose mode')}</p>
                                     <span className="text-[11px] text-emerald-300 font-mono">
                                         {comboSelectedPose === 'all' ? '5 Photos (Complete Set)' : '1 Photo (Single Pose)'}
                                     </span>
@@ -1198,7 +1210,7 @@ export default function AiStudioCustomer() {
                                                     <span>{p.label}</span>
                                                     {isAct && <span className="text-[10px] bg-emerald-400 text-stone-950 px-1.5 py-0.5 rounded font-bold">Selected</span>}
                                                 </p>
-                                                <p className="text-[10px] text-stone-400 mt-0.5">{p.desc}</p>
+                                                <p className="text-[10px] text-stone-400 mt-0.5">{p.id === 'all' ? t('Front, Back, Side, Close-up & Upper body ek saath', 'Front, Back, Side, Close-up & Upper body all together') : p.desc}</p>
                                             </button>
                                         );
                                     })}
@@ -1207,12 +1219,12 @@ export default function AiStudioCustomer() {
                         </div>
                     ) : (
                         kind.inputs.map(key => kind.edit && key === 'style' ? (
-                            <MaskBlock key={key} label={labelFor(kind, key)} photoUrl={form.face_image_url} maskUrl={form.style_image_url} onSave={saveMask} />
+                            <MaskBlock key={key} label={labelFor(kind, key, t)} photoUrl={form.face_image_url} maskUrl={form.style_image_url} onSave={saveMask} />
                         ) : (
                             <div key={key} className="space-y-1.5">
-                                <p className="text-xs font-bold text-stone-200">{labelFor(kind, key)}{kind.optional?.includes(key) ? ' (optional)' : ''}</p>
+                                <p className="text-xs font-bold text-stone-200">{labelFor(kind, key, t)}{kind.optional?.includes(key) ? ' (optional)' : ''}</p>
                                 <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
-                                    <input value={form[INPUT_COLUMN[key]]} onChange={e => setField(INPUT_COLUMN[key], e.target.value)} placeholder="Photo ka link (ya upload karo)" className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
+                                    <input value={form[INPUT_COLUMN[key]]} onChange={e => setField(INPUT_COLUMN[key], e.target.value)} placeholder={t('Photo ka link (ya upload karo)', 'Photo link (or upload)')} className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
                                     <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 border border-white/10 rounded-xl text-xs font-bold cursor-pointer">
                                         <Upload className="w-3.5 h-3.5" /> Upload
                                         <input type="file" accept="image/*" className="hidden" onChange={e => pickFile(e, INPUT_COLUMN[key])} />
@@ -1225,10 +1237,10 @@ export default function AiStudioCustomer() {
 
                     {kind.family && (
                         <div className="space-y-2">
-                            <p className="text-xs font-bold text-stone-200">Parivar ke members (jo nahi hai use khali chhodo)</p>
+                            <p className="text-xs font-bold text-stone-200">{t('Parivar ke members (jo nahi hai use khali chhodo)', 'Family members (leave empty if not needed)')}</p>
                             {familyRoles.map((role, i) => (
                                 <div key={role.role_key} className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
-                                    <input value={form.family_urls[i]} onChange={e => setFamilyUrl(i, e.target.value)} placeholder={`${role.label_customer} ka photo link`} className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
+                                    <input value={form.family_urls[i]} onChange={e => setFamilyUrl(i, e.target.value)} placeholder={t(`${role.label_customer} ka photo link`, `${role.label_customer} photo link`)} className="h-10 bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
                                     <label className="h-10 px-3 flex items-center gap-1.5 bg-stone-800 border border-white/10 rounded-xl text-xs font-bold cursor-pointer">
                                         <Upload className="w-3.5 h-3.5" /> Upload
                                         <input type="file" accept="image/*" className="hidden" onChange={e => pickFamilyFile(e, i)} />
@@ -1240,19 +1252,19 @@ export default function AiStudioCustomer() {
 
                     {kind.extras && !kind.family && (
                         <div className="space-y-1.5">
-                            <p className="text-xs font-bold text-stone-200">Aur photos (optional, ek saath 10 tak chuno)</p>
+                            <p className="text-xs font-bold text-stone-200">{t('Aur photos (optional, ek saath 10 tak chuno)', 'More photos (optional, choose up to 10 at once)')}</p>
                             <input type="file" accept="image/*" multiple onChange={pickExtraFiles} className="text-xs text-stone-300" />
-                            <textarea value={form.extra_image_urls} onChange={e => setField('extra_image_urls', e.target.value)} rows={2} placeholder="Har line mein ek photo ka link" className="w-full bg-stone-950 border border-white/10 rounded-xl p-3 text-xs" />
+                            <textarea value={form.extra_image_urls} onChange={e => setField('extra_image_urls', e.target.value)} rows={2} placeholder={t('Har line mein ek photo ka link', 'One photo link per line')} className="w-full bg-stone-950 border border-white/10 rounded-xl p-3 text-xs" />
                         </div>
                     )}
 
                     <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-stone-200">{kind.promptRequired ? 'Aap kya chahte ho? (zaroori)' : 'Kuch khas chahiye? (optional)'}</p>
-                        <textarea value={form.prompt} onChange={e => setField('prompt', e.target.value)} rows={3} placeholder="Jaise: cafe mein baith kar chai pite hue, halki roshni" className="w-full bg-stone-950 border border-white/10 rounded-xl p-3 text-xs" />
+                        <p className="text-xs font-bold text-stone-200">{kind.promptRequired ? t('Aap kya chahte ho? (zaroori)', 'What do you want? (required)') : t('Kuch khas chahiye? (optional)', 'Anything special? (optional)')}</p>
+                        <textarea value={form.prompt} onChange={e => setField('prompt', e.target.value)} rows={3} placeholder={t('Jaise: cafe mein baith kar chai pite hue, halki roshni', 'For example: sipping tea in a cafe, soft light')} className="w-full bg-stone-950 border border-white/10 rounded-xl p-3 text-xs" />
                     </div>
 
                     {form.task_type === 'chat' && (
-                        <input value={form.conversation_id} onChange={e => setField('conversation_id', e.target.value)} placeholder="Chat ka naam (same naam = wahi baat aage badhegi)" className="h-10 w-full bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
+                        <input value={form.conversation_id} onChange={e => setField('conversation_id', e.target.value)} placeholder={t('Chat ka naam (same naam = wahi baat aage badhegi)', 'Chat name (same name = continues the same conversation)')} className="h-10 w-full bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
                     )}
 
                     {kind.output === 'image' && (
@@ -1267,7 +1279,7 @@ export default function AiStudioCustomer() {
                                     {sizes.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </label>
-                            <label className="space-y-1 text-[11px] text-stone-300">Kitni photos
+                            <label className="space-y-1 text-[11px] text-stone-300">{t('Kitni photos', 'How many photos')}
                                 <input type="number" min={1} max={10} value={form.batch_count} onChange={e => setField('batch_count', Math.min(10, Math.max(1, Number(e.target.value) || 1)))} className="h-10 w-full bg-stone-950 border border-white/10 rounded-xl px-3 text-xs" />
                             </label>
                         </div>
@@ -1278,7 +1290,7 @@ export default function AiStudioCustomer() {
                     )}
 
                     <button onClick={send} disabled={sending || problems.length > 0 || !!maint} className="h-11 px-6 bg-yellow-400 text-stone-950 rounded-xl text-xs font-black flex items-center gap-2 disabled:opacity-40">
-                        {sending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Banwao
+                        {sending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} {t('Banwao', 'Create')}
                     </button>
                 </section>
             )}
@@ -1288,12 +1300,12 @@ export default function AiStudioCustomer() {
                     <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-900/40 border border-white/5 rounded-2xl p-4">
                         <div>
                             <h2 className="text-sm font-extrabold flex items-center gap-2">
-                                <span>Mere results</span>
+                                <span>{t('Mere results', 'My results')}</span>
                                 <span className="text-xs font-bold text-yellow-300 bg-yellow-400/10 border border-yellow-400/30 px-2.5 py-0.5 rounded-full">
                                     {apps.find(a => a.app_id === appId)?.label || appId} ({myTasks.length})
                                 </span>
                             </h2>
-                            <p className="text-[11px] text-stone-400">Sirf aapke is app ke tasks aur generated outputs</p>
+                            <p className="text-[11px] text-stone-400">{t('Sirf aapke is app ke tasks aur generated outputs', 'Only your tasks and generated outputs for this app')}</p>
                         </div>
                         <button
                             type="button"
@@ -1304,43 +1316,43 @@ export default function AiStudioCustomer() {
                         </button>
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {myTasks.map(t => {
-                            const st = STATUS_TEXT[t.status] || STATUS_TEXT.pending;
+                        {myTasks.map(task => {
+                            const st = STATUS_TEXT[task.status] || STATUS_TEXT.pending;
                             const Icon = st.icon;
-                            const photos = t.output_image_urls?.length ? t.output_image_urls : (t.output_image_url ? [t.output_image_url] : []);
+                            const photos = task.output_image_urls?.length ? task.output_image_urls : (task.output_image_url ? [task.output_image_url] : []);
                             return (
-                                <div key={t.id} className="bg-stone-900 border border-white/10 rounded-2xl p-4 space-y-3">
+                                <div key={task.id} className="bg-stone-900 border border-white/10 rounded-2xl p-4 space-y-3">
                                     <div className="flex items-center justify-between gap-2">
-                                        <span className="text-xs font-bold text-stone-200">{kinds[t.task_type]?.label || t.task_type} <span className="text-[10px] font-normal text-stone-500">· {apps.find(a => a.app_id === t.app_id)?.label || t.app_id}</span></span>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${st.cls}`}><Icon className="w-3 h-3" /> {st.text}</span>
+                                        <span className="text-xs font-bold text-stone-200">{kinds[task.task_type]?.label || task.task_type} <span className="text-[10px] font-normal text-stone-500">· {apps.find(a => a.app_id === task.app_id)?.label || task.app_id}</span></span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${st.cls}`}><Icon className="w-3 h-3" /> {t(st.text, st.en)}</span>
                                     </div>
-                                    {t.prompt && <p className="text-[11px] text-stone-400 line-clamp-2">{t.prompt}</p>}
-                                    {t.status === 'failed' && <p className="text-[11px] text-rose-300">Kuch galat ho gaya. Dobara koshish karo ya prompt badlo.</p>}
+                                    {task.prompt && <p className="text-[11px] text-stone-400 line-clamp-2">{task.prompt}</p>}
+                                    {task.status === 'failed' && <p className="text-[11px] text-rose-300">{t('Kuch galat ho gaya. Dobara koshish karo ya prompt badlo.', 'Something went wrong. Try again or change the prompt.')}</p>}
                                     {/* Before / after: the photo you sent next to the first result */}
-                                    {t.task_type === 'suit_studio' && (t.face_image_url || t.style_image_url) && (
+                                    {task.task_type === 'suit_studio' && (task.face_image_url || task.style_image_url) && (
                                         <div className="grid grid-cols-2 gap-2">
-                                            {t.style_image_url && (
+                                            {task.style_image_url && (
                                                 <div className="space-y-1">
                                                     <p className="text-[10px] text-yellow-300 font-bold">👔 Suit Photo</p>
-                                                    <img src={t.style_image_url} alt="Suit" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl border border-yellow-400/20" />
+                                                    <img src={task.style_image_url} alt="Suit" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl border border-yellow-400/20" />
                                                 </div>
                                             )}
-                                            {t.face_image_url && (
+                                            {task.face_image_url && (
                                                 <div className="space-y-1">
                                                     <p className="text-[10px] text-stone-300 font-bold">👤 Model Photo</p>
-                                                    <img src={t.face_image_url} alt="Model" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl border border-white/10" />
+                                                    <img src={task.face_image_url} alt="Model" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl border border-white/10" />
                                                 </div>
                                             )}
                                         </div>
                                     )}
-                                    {t.task_type !== 'suit_studio' && photos.length > 0 && (t.face_image_url || t.input_image_url) && (
+                                    {task.task_type !== 'suit_studio' && photos.length > 0 && (task.face_image_url || task.input_image_url) && (
                                         <div className="grid grid-cols-2 gap-2">
                                             <div className="space-y-1">
-                                                <p className="text-[10px] text-stone-400">Pehle</p>
-                                                <img src={t.face_image_url || t.input_image_url} alt="" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl" />
+                                                <p className="text-[10px] text-stone-400">{t('Pehle', 'Before')}</p>
+                                                <img src={task.face_image_url || task.input_image_url} alt="" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl" />
                                             </div>
                                             <div className="space-y-1">
-                                                <p className="text-[10px] text-stone-400">Baad mein</p>
+                                                <p className="text-[10px] text-stone-400">{t('Baad mein', 'After')}</p>
                                                 <img src={photos[0]} alt="" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl" />
                                             </div>
                                         </div>
@@ -1348,20 +1360,20 @@ export default function AiStudioCustomer() {
                                     {photos.map((url, i) => (
                                         <div key={i} className="space-y-2">
                                             <img src={url} alt="" loading="lazy" className="w-full aspect-[4/5] object-cover rounded-xl" />
-                                            <a href={url} target="_blank" rel="noreferrer" download className="h-9 w-full flex items-center justify-center gap-2 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold"><Download className="w-3.5 h-3.5" /> Photo download karo</a>
+                                            <a href={url} target="_blank" rel="noreferrer" download className="h-9 w-full flex items-center justify-center gap-2 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold"><Download className="w-3.5 h-3.5" /> {t('Photo download karo', 'Download photo')}</a>
                                         </div>
                                     ))}
-                                    {t.output_text && (
+                                    {task.output_text && (
                                         <div className="space-y-1.5 bg-black/40 border border-emerald-500/20 rounded-xl p-3">
                                             <p className="text-[10px] text-emerald-300 font-bold flex items-center gap-1.5 uppercase tracking-wide">
                                                 <MessageSquare className="w-3 h-3 text-emerald-400" /> Response (output_text):
                                             </p>
                                             <div className="text-xs text-stone-100 whitespace-pre-wrap max-h-60 overflow-auto font-sans leading-relaxed select-text">
-                                                {t.output_text}
+                                                {task.output_text}
                                             </div>
                                         </div>
                                     )}
-                                    {t.face_match_score != null && <p className="text-[11px] text-stone-400">Chehra milne ka score: {Math.round(t.face_match_score)}%</p>}
+                                    {task.face_match_score != null && <p className="text-[11px] text-stone-400">{t('Chehra milne ka score', 'Face match score')}: {Math.round(task.face_match_score)}%</p>}
 
                                     {/* 🗄️ Origin Table & JSON Format Inspector */}
                                     <div className="pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px] text-stone-400">
@@ -1371,7 +1383,7 @@ export default function AiStudioCustomer() {
                                         </span>
                                         <button
                                             type="button"
-                                            onClick={() => setSelectedCustomerTask(t)}
+                                            onClick={() => setSelectedCustomerTask(task)}
                                             className="px-2.5 py-1 rounded-lg bg-yellow-400/10 hover:bg-yellow-400/20 text-yellow-300 text-[10px] font-bold font-mono transition-colors border border-yellow-400/20 flex items-center gap-1"
                                         >
                                             <Terminal className="w-3 h-3" />
@@ -1382,7 +1394,7 @@ export default function AiStudioCustomer() {
                             );
                         })}
                     </div>
-                    {myTasks.length === 0 && <p className="text-center text-xs text-stone-500 py-10">Abhi aapka koi kaam nahi. "Naya kaam" se shuru karo.</p>}
+                    {myTasks.length === 0 && <p className="text-center text-xs text-stone-500 py-10">{t('Abhi aapka koi kaam nahi. "Naya kaam" se shuru karo.', 'You have no tasks yet. Start with "New task".')}</p>}
                 </section>
             )}
 

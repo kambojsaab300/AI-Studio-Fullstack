@@ -21,6 +21,9 @@ export function getEffectiveApiUrl(providedUrl) {
                 }
             }
         } catch { }
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return 'http://localhost:5005';
+        }
         if (providedUrl) {
             return providedUrl.replace(/\/$/, "");
         }

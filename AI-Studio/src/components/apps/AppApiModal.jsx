@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { X, Copy, Check, Terminal, Code2, Globe, ShieldCheck, Play, ArrowRight } from 'lucide-react';
 import { API_URL, API_KEY } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function AppApiModal({ isOpen, onClose, appId, appLabel, selectedTool, samplePayload }) {
+    const t = useT();
     if (!isOpen) return null;
 
     const [activeTab, setActiveTab] = useState('curl'); // 'curl' | 'js' | 'python' | 'json'
@@ -178,7 +180,7 @@ for i in range(60):
                                 </span>
                             </div>
                             <p className="text-xs text-slate-400 mt-0.5">
-                                Is API endpoint ko aap kisi bhi external app, mobile app, website ya backend script se directly call kar sakte hain.
+                                {t('Is API endpoint ko aap kisi bhi external app, mobile app, website ya backend script se directly call kar sakte hain.', 'You can call this API endpoint directly from any external app, mobile app, website or backend script.')}
                             </p>
                         </div>
                     </div>
@@ -281,13 +283,22 @@ for i in range(60):
                         </h4>
                         <ul className="text-slate-400 space-y-1 list-disc list-inside leading-relaxed text-[11px]">
                             <li>
-                                Har request me <code className="text-amber-300">app_id: "{appId}"</code> mandatory hai.
+                                {t(
+                                    <>Har request me <code className="text-amber-300">app_id: "{appId}"</code> mandatory hai.</>,
+                                    <>Every request must include <code className="text-amber-300">app_id: "{appId}"</code>.</>
+                                )}
                             </li>
                             <li>
-                                API backend verify karta hai ki <code className="text-amber-300">{taskType}</code> tool is app ko assigned hai ya nahi.
+                                {t(
+                                    <>API backend verify karta hai ki <code className="text-amber-300">{taskType}</code> tool is app ko assigned hai ya nahi.</>,
+                                    <>The API backend verifies that the <code className="text-amber-300">{taskType}</code> tool is assigned to this app.</>
+                                )}
                             </li>
                             <li>
-                                Task generate hone ke baad real-time status check karne ke liye: <code className="text-slate-300">GET /rest/v1/ai_studio_tasks?id=eq.&#123;id&#125;&app_id=eq.{appId}</code>
+                                {t(
+                                    <>Task generate hone ke baad real-time status check karne ke liye: <code className="text-slate-300">GET /rest/v1/ai_studio_tasks?id=eq.&#123;id&#125;&app_id=eq.{appId}</code></>,
+                                    <>To check the status in real time after the task is generated: <code className="text-slate-300">GET /rest/v1/ai_studio_tasks?id=eq.&#123;id&#125;&app_id=eq.{appId}</code></>
+                                )}
                             </li>
                         </ul>
                     </div>

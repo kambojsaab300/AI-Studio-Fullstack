@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Upload, X, Image as ImageIcon } from 'lucide-react';
 import { InfoTip } from '../common/InfoTip';
 import { uploadFile } from '../../api/uploadService';
+import { useT } from '../../i18n/lang';
 
 export function BatchUploader({ type, form, setForm, onSetMsg }) {
+    const t = useT();
     const [uploadingCount, setUploadingCount] = useState(0);
 
     if (!type.extras || type.family) return null;
@@ -17,7 +19,7 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
         const files = Array.from(e.target.files || []).slice(0, 50);
         if (!files.length) return;
         setUploadingCount(files.length);
-        if (onSetMsg) onSetMsg(`${files.length} photos upload ho rahi hain...`);
+        if (onSetMsg) onSetMsg(t(`${files.length} photos upload ho rahi hain...`, `Uploading ${files.length} photos...`));
         try {
             const uploadedUrls = [];
             for (let i = 0; i < files.length; i++) {
@@ -26,7 +28,7 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
             }
             const combined = [...urls, ...uploadedUrls].slice(0, 50);
             setForm(prev => ({ ...prev, extra_image_urls: combined.join('\n') }));
-            if (onSetMsg) onSetMsg(`${combined.length} photos successfully upload ho gayi!`);
+            if (onSetMsg) onSetMsg(t(`${combined.length} photos successfully upload ho gayi!`, `${combined.length} photos uploaded successfully!`));
         } catch (err) {
             if (onSetMsg) onSetMsg('Upload error: ' + err.message);
         } finally {
@@ -50,7 +52,7 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
                     <ImageIcon className="w-4 h-4 text-amber-400" />
-                    <span>Batch Model Photos Upload (1 se 50 Photos)</span>
+                    <span>{t('Batch Model Photos Upload (1 se 50 Photos)', 'Batch Model Photos Upload (1 to 50 Photos)')}</span>
                     <InfoTip text="Upload multiple photos in one batch. Worker will process all photos in parallel or one-by-one catalog extractions." />
                 </label>
                 <div className="flex items-center gap-2">
@@ -89,8 +91,8 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
                     </label>
                     <p className="text-[11px] text-slate-400">
                         {uploadingCount > 0 
-                            ? `Uploading ${uploadingCount} photos, kripya wait karein...` 
-                            : 'Mobile ya computer se saari photos ek sath select karke upload karein'}
+                            ? t(`Uploading ${uploadingCount} photos, kripya wait karein...`, `Uploading ${uploadingCount} photos, please wait...`)
+                            : t('Mobile ya computer se saari photos ek sath select karke upload karein', 'Select all photos at once from your phone or computer and upload them')}
                     </p>
                 </div>
             </div>
@@ -100,7 +102,7 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
                 <div className="space-y-2 pt-1">
                     <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
                         <span>Uploaded Model Photos Queue:</span>
-                        <span className="text-[10px] text-amber-300 font-mono">Har photo ka alag garment banega</span>
+                        <span className="text-[10px] text-amber-300 font-mono">{t('Har photo ka alag garment banega', 'Each photo will create a separate garment')}</span>
                     </div>
                     <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-48 overflow-y-auto pr-1">
                         {urls.map((url, idx) => (
@@ -113,7 +115,7 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
                                     type="button"
                                     onClick={() => removePhoto(idx)}
                                     className="absolute top-1 right-1 w-4 h-4 bg-rose-500/90 hover:bg-rose-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                    title="Photo remove karein"
+                                    title={t('Photo remove karein', 'Remove photo')}
                                 >
                                     <X className="w-2.5 h-2.5" />
                                 </button>
@@ -126,13 +128,13 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
             {/* Optional Raw Link Input */}
             <details className="text-[11px] text-slate-400 cursor-pointer pt-1">
                 <summary className="hover:text-amber-300 transition-colors">
-                    Direct image URLs paste karna chahein to click karein (Optional)
+                    {t('Direct image URLs paste karna chahein to click karein (Optional)', 'Click to paste direct image URLs (Optional)')}
                 </summary>
                 <textarea
                     value={form.extra_image_urls}
                     onChange={e => setForm({ ...form, extra_image_urls: e.target.value })}
                     rows={3}
-                    placeholder="https://... (ek line me ek photo link)"
+                    placeholder={t('https://... (ek line me ek photo link)', 'https://... (one photo link per line)')}
                     className="mt-2 w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-amber-400"
                 />
             </details>

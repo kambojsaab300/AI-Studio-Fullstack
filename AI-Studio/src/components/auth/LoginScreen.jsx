@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { Shield, LogIn, Loader2, AlertCircle } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
+import { BackendUrlField } from '../common/BackendUrlField';
+import { useT, LangToggle } from '../../i18n/lang';
 
 export function LoginScreen() {
     const { sb } = useAdmin();
+    const t = useT();
     const [email, setEmail] = useState('admin@aistudio.local');
     const [password, setPassword] = useState('Admin@123456');
     const [loading, setLoading] = useState(false);
@@ -15,7 +18,7 @@ export function LoginScreen() {
         setErrorMsg('');
         try {
             const { error } = await sb.auth.signInWithPassword({ email, password });
-            if (error) setErrorMsg(error.message || 'Login fail hua. Credentials check karein.');
+            if (error) setErrorMsg(error.message || t('Login fail hua. Credentials check karein.', 'Login failed. Please check your credentials.'));
         } catch (err) {
             setErrorMsg(err.message);
         } finally {
@@ -28,7 +31,7 @@ export function LoginScreen() {
         setErrorMsg('');
         try {
             const { error } = await sb.auth.signInAnonymously();
-            if (error) setErrorMsg(error.message || 'Guest login fail hua.');
+            if (error) setErrorMsg(error.message || t('Guest login fail hua.', 'Guest login failed.'));
         } catch (err) {
             setErrorMsg(err.message);
         } finally {
@@ -39,6 +42,9 @@ export function LoginScreen() {
     return (
         <div className="min-h-screen bg-[#07080d] flex items-center justify-center p-4">
             <div className="w-full max-w-md bg-[#0e1320] border border-slate-800/80 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl animate-fadeIn">
+                <div className="flex justify-end">
+                    <LangToggle />
+                </div>
                 {/* Logo & Header */}
                 <div className="text-center space-y-2">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-200 mx-auto flex items-center justify-center shadow-lg shadow-amber-400/20">
@@ -54,6 +60,8 @@ export function LoginScreen() {
                         <span>{errorMsg}</span>
                     </div>
                 )}
+
+                <BackendUrlField />
 
                 <form onSubmit={handleLogin} className="space-y-4">
                     <div className="space-y-1">

@@ -16,9 +16,11 @@ import { API, TABLES } from '../../api/config';
 import { formatDuration, timeAgo } from '../../utils/formatters';
 import { createAppService } from '../../api/appService';
 import { AppApiModal } from './AppApiModal';
+import { useT } from '../../i18n/lang';
 
 export function AppWorkspaceView({ app }) {
     const { sb, catalog, appTasks, models, prompts, syncLiveTasks, setLiveTasks, setMsg } = useAdmin();
+    const t = useT();
 
     const appId = app.app_id;
     const appService = useMemo(() => createAppService(sb), [sb]);
@@ -81,10 +83,10 @@ export function AppWorkspaceView({ app }) {
     };
 
     const handleSendTask = async () => {
-        if (problems.length) {
+        if (problems && problems.length > 0) {
             const errText = problems.join(', ');
-            setBtnFeedback({ type: 'error', message: errText });
-            setMsg('Pehle ye theek karo: ' + errText);
+            setBtnFeedback({ type: 'error', message: t('❌ Zaroori parameters missing: ', '❌ Required parameters missing: ') + errText });
+            setMsg(t('❌ Zaroori parameters missing: ', '❌ Required parameters missing: ') + errText);
             return;
         }
 
@@ -93,13 +95,14 @@ export function AppWorkspaceView({ app }) {
         try {
             const { success, taskId, error } = await appService.createTask(appId, row);
             if (!success || error) {
-                const errText = 'API Error: ' + (error?.message || JSON.stringify(error));
+                const errMsg = error?.message || error?.error || (typeof error === 'string' ? error : JSON.stringify(error));
+                const errText = t('❌ Task create nahi ho saka: ', '❌ Could not create task: ') + errMsg;
                 setBtnFeedback({ type: 'error', message: errText });
                 setMsg(errText);
                 return;
             }
 
-            const successMsg = `⚡ Task #${taskId} dispatch ho gaya for App "${app.label}"!`;
+            const successMsg = t(`⚡ Task #${taskId} dispatch ho gaya for App "${app.label}"!`, `⚡ Task #${taskId} dispatched for App "${app.label}"!`);
             setBtnFeedback({ type: 'success', message: successMsg });
             setMsg(successMsg);
 
@@ -156,7 +159,10 @@ export function AppWorkspaceView({ app }) {
                         </span>
                     </div>
                     <p className="text-xs text-slate-300">
-                        Aap is waqt <span className="text-amber-300 font-bold">{app.label}</span> ke environment mein kaam kar rahe hain. Yahan sirf is app ko assign kiye gaye tools dikhenge aur generate hone wale tasks isi app ke account mein save honge.
+                        {t(
+                            <>Aap is waqt <span className="text-amber-300 font-bold">{app.label}</span> ke environment mein kaam kar rahe hain. Yahan sirf is app ko assign kiye gaye tools dikhenge aur generate hone wale tasks isi app ke account mein save honge.</>,
+                            <>You are working in the <span className="text-amber-300 font-bold">{app.label}</span> environment. Only tools assigned to this app are shown here, and generated tasks are saved under this app's account.</>
+                        )}
                     </p>
                 </div>
 
@@ -180,8 +186,8 @@ export function AppWorkspaceView({ app }) {
             {/* If no tools assigned to this app */}
             {assignedTools.length === 0 ? (
                 <div className="bg-[#0e1320] border border-slate-800 rounded-2xl p-8 text-center space-y-3">
-                    <p className="text-sm text-amber-300 font-bold">Is App ko abhi koi tool assign nahi kiya gaya hai.</p>
-                    <p className="text-xs text-slate-400">Upar "Manage Assigned Tools" tab mein ja kar tools assign karein.</p>
+                    <p className="text-sm text-amber-300 font-bold">{t('Is App ko abhi koi tool assign nahi kiya gaya hai.', 'No tool is assigned to this app yet.')}</p>
+                    <p className="text-xs text-slate-400">{t(`Upar "Manage Assigned Tools" tab mein ja kar tools assign karein.`, `Go to the "Manage Assigned Tools" tab above to assign tools.`)}</p>
                 </div>
             ) : (
                 /* Tools Grid & Live Execution Engine */

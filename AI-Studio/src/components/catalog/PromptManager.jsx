@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Terminal, Save, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function PromptManager() {
     const { sb, catalog, prompts, setPrompts, loadConfig, setMsg } = useAdmin();
+    const t = useT();
     const [selectedType, setSelectedType] = useState('image_to_image_prompt');
     const [saving, setSaving] = useState(false);
     const [savedMsg, setSavedMsg] = useState('');
@@ -28,7 +30,7 @@ export function PromptManager() {
     };
 
     const handleSavePrompt = async () => {
-        if (!currentPrompt.system_text.trim()) return setMsg('System text khali nahi ho sakta');
+        if (!currentPrompt.system_text.trim()) return setMsg(t('System text khali nahi ho sakta', 'System text cannot be empty'));
         setSaving(true);
         setSavedMsg('');
         try {

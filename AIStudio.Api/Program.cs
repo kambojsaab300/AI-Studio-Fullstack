@@ -47,14 +47,15 @@ builder.Services.AddControllers()
 
 builder.Services.AddSingleton<DatabaseService>();
 
-// Configure CORS for local development and web portals
+// Configure CORS for local development and web portals (allows credentials for cookies/JWT across origins)
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.SetIsOriginAllowed(origin => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
+              .AllowCredentials()
               .WithExposedHeaders("X-Total-Count", "Content-Range", "X-Page-Limit", "X-Page-Offset");
     });
 });

@@ -5,11 +5,13 @@ import { StatusBadge } from '../common/StatusBadge';
 import { TaskModal } from './TaskModal';
 import { formatDuration, timeAgo } from '../../utils/formatters';
 import { TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 const PAGE_SIZE = 10;
 
 export function TaskHistory() {
     const { sb, isAdmin, liveTasks } = useAdmin();
+    const t = useT();
     const [tab, setTab] = useState('pending');
     const [page, setPage] = useState(0);
     const [rows, setRows] = useState([]);
@@ -147,7 +149,7 @@ export function TaskHistory() {
                         {filteredRows.length === 0 ? (
                             <tr>
                                 <td colSpan={8} className="p-8 text-center text-stone-500 font-mono text-xs">
-                                    {loading ? 'Tasks load ho rahe hain...' : 'Is tab mein koi task nahi mila.'}
+                                    {loading ? t('Tasks load ho rahe hain...', 'Loading tasks...') : t('Is tab mein koi task nahi mila.', 'No tasks found in this tab.')}
                                 </td>
                             </tr>
                         ) : (

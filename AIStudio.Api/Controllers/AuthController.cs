@@ -36,6 +36,7 @@ namespace AIStudio.Api.Controllers
         {
             public string Email { get; set; } = string.Empty;
             public string Password { get; set; } = string.Empty;
+            public string Role { get; set; } = "customer"; // "customer", "app", or "admin"
         }
 
         [HttpPost("login")]
@@ -49,6 +50,7 @@ namespace AIStudio.Api.Controllers
                 return Unauthorized(new { error = "Email ya password galat hai." });
 
             bool isAdmin = user.Role == "admin" || await _db.IsAdminAsync(user.Id);
+            string effectiveRole = isAdmin ? "admin" : (string.IsNullOrWhiteSpace(user.Role) ? "customer" : user.Role);
             string token = GenerateJwtToken(user, isAdmin);
 
             // Set secure HttpOnly cookie for automatic browser persistence across refreshes
@@ -70,7 +72,7 @@ namespace AIStudio.Api.Controllers
                 {
                     id = user.Id,
                     email = user.Email,
-                    role = isAdmin ? "admin" : "customer",
+                    role = effectiveRole,
                     is_admin = isAdmin
                 }
             });
@@ -145,8 +147,10 @@ namespace AIStudio.Api.Controllers
 
             try
             {
-                var user = await _db.RegisterUserAsync(req.Email, req.Password, "customer");
-                string token = GenerateJwtToken(user, false);
+                string desiredRole = string.IsNullOrWhiteSpace(req.Role) ? "customer" : req.Role.Trim().ToLowerInvariant();
+                var user = await _db.RegisterUserAsync(req.Email, req.Password, desiredRole);
+                bool isAdmin = desiredRole == "admin";
+                string token = GenerateJwtToken(user, isAdmin);
 
                 Response.Cookies.Append("aistudio_jwt", token, new CookieOptions
                 {
@@ -165,8 +169,8 @@ namespace AIStudio.Api.Controllers
                     {
                         id = user.Id,
                         email = user.Email,
-                        role = "customer",
-                        is_admin = false
+                        role = user.Role,
+                        is_admin = isAdmin
                     }
                 });
             }
@@ -221,11 +225,12 @@ namespace AIStudio.Api.Controllers
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+            string effectiveRole = isAdmin ? "admin" : (string.IsNullOrWhiteSpace(user.Role) ? "customer" : user.Role);
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id),
                 new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, isAdmin ? "admin" : "customer"),
+                new Claim(ClaimTypes.Role, effectiveRole),
                 new Claim("is_admin", isAdmin ? "true" : "false")
             };
 

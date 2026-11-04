@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Sliders, Save, Mail, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function SystemSettings() {
     const { sb, cfg, setCfg, setMsg, loadConfig } = useAdmin();
+    const t = useT();
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
 
@@ -28,7 +30,7 @@ export function SystemSettings() {
             if (e1) throw e1;
 
             setSaved(true);
-            setMsg('Fleet Settings save ho gayi hain!');
+            setMsg(t('Fleet Settings save ho gayi hain!', 'Fleet Settings saved!'));
             setTimeout(() => setSaved(false), 3000);
             loadConfig();
         } catch (err) {
@@ -39,7 +41,7 @@ export function SystemSettings() {
     };
 
     const handleSendTestMail = async () => {
-        setMsg('Test mail bheja ja raha hai...');
+        setMsg(t('Test mail bheja ja raha hai...', 'Sending test mail...'));
         const { error } = await sb.rpc('ai_studio_send_test_mail');
         setMsg(error ? 'Test mail error: ' + error.message : 'Test mail successfully sent! Check your inbox.');
     };

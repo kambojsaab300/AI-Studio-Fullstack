@@ -85,10 +85,23 @@ export function requestPreview(row, prompts) {
     };
 }
 
+const isValidUrl = (u) => {
+    if (!u || typeof u !== 'string') return false;
+    const t = u.trim();
+    return t.length > 0 && t !== 'null' && t !== 'undefined' && t !== '{}' && t !== '[]';
+};
+
 export function problemsFor(f, row, prompts) {
     const p = [];
     const type = typeOf(f.task_type);
     const caps = capsOf(f.model);
+
+    if (!f.task_type) {
+        p.push('Task type select karein');
+    }
+    if (!f.model) {
+        p.push('AI Model select karein');
+    }
 
     // Only complain if prompt row exists in memory and is disabled
     if (!['chat', 'photo_read'].includes(f.task_type) && prompts && prompts[f.task_type] && prompts[f.task_type].enabled === false) {
@@ -98,16 +111,18 @@ export function problemsFor(f, row, prompts) {
         p.push('Is task type ke liye ye model nahi chalega');
     }
     for (const key of (type.inputs || [])) {
-        if (!type.optional?.includes(key) && !row[INPUT_COLUMN[key]]) {
-            p.push(`${labelFor(type, key)} chahiye`);
+        if (!type.optional?.includes(key) && !isValidUrl(row[INPUT_COLUMN[key]])) {
+            p.push(`${labelFor(type, key)} zaroori hai`);
         }
     }
-    if (type.promptRequired && !row.prompt) p.push('Creative prompt zaroori hai');
-    if (type.family && (row.extra_image_urls || []).filter(Boolean).length < 2) {
-        p.push('Parivar ki kam se kam 2 photos chahiye');
+    if (type.promptRequired && (!row.prompt || !row.prompt.trim())) {
+        p.push('Creative prompt zaroori hai');
     }
-    if (type.extras && !type.family && (!row.extra_image_urls || row.extra_image_urls.length === 0)) {
-        p.push('Kam se kam 1 photo upload karein (1 se 50 photos tak)');
+    if (type.family && (row.extra_image_urls || []).filter(isValidUrl).length < 2) {
+        p.push('Parivar ki kam se kam 2 photos zaroori hain');
+    }
+    if (type.extras && !type.family && (!row.extra_image_urls || row.extra_image_urls.filter(isValidUrl).length === 0)) {
+        p.push('Kam se kam 1 photo upload karein (extra_image_urls)');
     }
     if (type.output === 'image' && caps && caps.kind === 'image') {
         if (caps.aspects && caps.aspects.length > 0 && row.aspect_ratio && !caps.aspects.includes(row.aspect_ratio)) {

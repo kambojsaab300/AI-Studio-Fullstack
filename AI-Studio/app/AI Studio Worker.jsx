@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, AlertCircle, CheckCircle2, Cpu, Image as ImageIcon } from 'lucide-react';
+import { useT, LangToggle } from '../src/i18n/lang';
+import { getLang } from '../src/i18n/lang';
+
+// Text built outside render (log lines, timers, async work): reads the language at the moment it is written.
+const tl = (hi, en) => (getLang() === 'en' ? en : hi);
 
 // ============================================================
 // AI Studio: .NET Core API Client (Standalone Inline Adapter)
@@ -151,6 +156,9 @@ function getEffectiveApiUrl(providedUrl) {
                 }
             }
         } catch { }
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return 'http://localhost:5005';
+        }
         if (providedUrl) {
             return providedUrl.replace(/\/$/, "");
         }
@@ -181,7 +189,7 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
                         body: JSON.stringify({ email, password })
                     });
                     const json = await res.json();
-                    if (!res.ok) return { data: null, error: { message: json.error || 'Login fail hua.' } };
+                    if (!res.ok) return { data: null, error: { message: json.error || tl('Login fail hua.', 'Login failed.') } };
                     token = json.access_token;
                     currentUser = json.user;
                     try {
@@ -208,7 +216,7 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
                         body: JSON.stringify({ email, password })
                     });
                     const json = await res.json();
-                    if (!res.ok) return { data: null, error: { message: json.error || 'Signup fail hua.' } };
+                    if (!res.ok) return { data: null, error: { message: json.error || tl('Signup fail hua.', 'Signup failed.') } };
                     token = json.access_token;
                     currentUser = json.user;
                     try {
@@ -774,6 +782,7 @@ const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
 });
 
 export default function AiStudioWorker() {
+    const t = useT();
     const [apiKey, setApiKey] = useState(API_KEY);
     const [customApiUrl, setCustomApiUrl] = useState(() => getEffectiveApiUrl(API_URL));
     // Reads the browser key (gemini_api_key). An older save under ai_studio_api_key is used too if it is the only one.
@@ -788,7 +797,7 @@ export default function AiStudioWorker() {
     // Save Configuration: the key goes to this browser (localStorage gemini_api_key), like weargen automatic
     const saveGeminiKey = () => {
         const k = keyDraft.trim();
-        if (!validGeminiKey(k)) return setKeyMsg('Key galat hai. AIza se shuru honi chahiye.');
+        if (!validGeminiKey(k)) return setKeyMsg(t('Key galat hai. AIza se shuru honi chahiye.', 'Wrong key. It must start with AIza.'));
         localStorage.setItem(GEMINI_KEY_STORAGE, k);
         setAiStudioKey(k);
         setKeyDraft('');
@@ -808,7 +817,7 @@ export default function AiStudioWorker() {
                 // 30 records pure hone par screen se purane logs clear karke fresh start
                 return [
                     { t: new Date().toLocaleTimeString(), text },
-                    { t: new Date().toLocaleTimeString(), text: '⚡ [Auto-Clear] 30 logs limit reached: Screen logs reset ho gaye' }
+                    { t: new Date().toLocaleTimeString(), text: tl('⚡ [Auto-Clear] 30 logs limit reached: Screen logs reset ho gaye', '⚡ [Auto-Clear] 30 logs limit reached: screen logs were reset') }
                 ];
             }
             return [{ t: new Date().toLocaleTimeString(), text }, ...prev];
@@ -820,7 +829,7 @@ export default function AiStudioWorker() {
         if (logs.length >= 30) {
             const timer = setTimeout(() => {
                 setLogs([
-                    { t: new Date().toLocaleTimeString(), text: '⚡ [Auto-Clear] 30 logs pure ho gaye: Screen logs auto-clear ho gaye' }
+                    { t: new Date().toLocaleTimeString(), text: tl('⚡ [Auto-Clear] 30 logs pure ho gaye: Screen logs auto-clear ho gaye', '⚡ [Auto-Clear] 30 logs reached: screen logs auto-cleared') }
                 ]);
             }, 1500);
             return () => clearTimeout(timer);
@@ -844,7 +853,7 @@ export default function AiStudioWorker() {
                 purgeAllMemory();
                 const newStats = getMemoryStats();
                 setMemStats(newStats);
-                log(`[Auto-RAM Purge] RAM ${ramBefore}MB high tha. Caches saaf hue (${countBefore} items). RAM ab: ${newStats.usedMB || 'OK'}MB`);
+                log(tl(`[Auto-RAM Purge] RAM ${ramBefore}MB high tha. Caches saaf hue (${countBefore} items). RAM ab: ${newStats.usedMB || 'OK'}MB`, `[Auto-RAM Purge] RAM was ${ramBefore}MB (high). Caches cleared (${countBefore} items). RAM now: ${newStats.usedMB || 'OK'}MB`));
             }
         };
         const timer = setInterval(checkMemory, 3000);
@@ -959,7 +968,7 @@ export default function AiStudioWorker() {
     const complete = async (id, patch) => {
         const { data, error } = await sbRef.current.rpc(API.SAVE_RESULT, { p_id: id, p_worker_id: workerIdRef.current, p_patch: patch });
         if (error) throw error;
-        if (!data || data.length === 0) log(`Task #${id}: ownership nahi mili, result save nahi hua`);
+        if (!data || data.length === 0) log(tl(`Task #${id}: ownership nahi mili, result save nahi hua`, `Task #${id}: ownership not found, result not saved`));
     };
 
     // Model call through the Gemini limiter (so the total calls stay within the setting)
@@ -1027,7 +1036,7 @@ export default function AiStudioWorker() {
                 console.warn('AutoPause error:', err);
             }
         }
-        log('Worker khud pause ho gaya: ' + reason);
+        log(tl('Worker khud pause ho gaya: ', 'Worker paused itself: ') + reason);
     };
 
     const failTask = async (task, err) => {
@@ -1048,7 +1057,7 @@ export default function AiStudioWorker() {
             const nextRun = new Date(Date.now() + delaySec * 1000).toISOString();
             retryAfterMap.current.set(task.id, Date.now() + delaySec * 1000);
             await complete(task.id, { status: 'pending', attempts, next_run_at: nextRun, error: msg });
-            log(`Task #${task.id}: fail, ${delaySec} second baad dobara (${attempts}/${cfg.max_attempts}): ${msg}`);
+            log(tl(`Task #${task.id}: fail, ${delaySec} second baad dobara (${attempts}/${cfg.max_attempts}): ${msg}`, `Task #${task.id}: failed, retrying in ${delaySec} seconds (${attempts}/${cfg.max_attempts}): ${msg}`));
         } else {
             retryAfterMap.current.delete(task.id);
             await complete(task.id, { status: 'failed', attempts, error: msg });
@@ -1064,7 +1073,7 @@ export default function AiStudioWorker() {
         const recycleLimit = Number(settingsRef.current.worker_recycle_after_tasks) || 50;
 
         if (currentDone >= recycleLimit) {
-            log(`[Auto-Recycle] ${currentDone}/${recycleLimit} tasks complete ho gaye! Logs aur cache clear karke fresh page reload hoga...`);
+            log(tl(`[Auto-Recycle] ${currentDone}/${recycleLimit} tasks complete ho gaye! Logs aur cache clear karke fresh page reload hoga...`, `[Auto-Recycle] ${currentDone}/${recycleLimit} tasks completed! Clearing logs and cache, then reloading the page fresh...`));
             // 1. Activity Logs clear
             setLogs([]);
             // 2. Memory & Image Caches purge
@@ -1084,6 +1093,7 @@ export default function AiStudioWorker() {
     // Run one claimed task from start to finish
     const processTask = async (task) => {
         const client = sbRef.current;
+        const appLabel = (task.app_id || 'weargen').toUpperCase();
         let inputs = {};
         try {
             let type = TASK_TYPES[task.task_type];
@@ -1111,7 +1121,7 @@ export default function AiStudioWorker() {
                 if (waitErr) throw waitErr;
                 if (waiting?.length) {
                     await complete(task.id, { status: 'pending' });   // give it back, try again later
-                    log(`Task #${task.id}: pichhle message ka wait`);
+                    log(tl(`Task #${task.id}: pichhle message ka wait`, `Task #${task.id}: waiting for the previous message`));
                     return;
                 }
                 const { data, error } = await client.from(TABLES.TASKS)
@@ -1138,7 +1148,7 @@ export default function AiStudioWorker() {
                 const result = await askModel({ ...task, history }, inputs);
                 await complete(task.id, { status: 'done', output_text: result.text });
                 onTaskCompletedSuccess();
-                log(`[${appLabel}] Task #${task.id}: text response tayyar`);
+                log(tl(`[${appLabel}] Task #${task.id}: text response tayyar`, `[${appLabel}] Task #${task.id}: text response ready`));
                 return;
             }
 
@@ -1162,7 +1172,7 @@ export default function AiStudioWorker() {
                     face_match_score: null
                 });
                 onTaskCompletedSuccess();
-                log(`Task #${task.id}: ${made.length} / ${photosIn.length} photo bani`);
+                log(tl(`Task #${task.id}: ${made.length} / ${photosIn.length} photo bani`, `Task #${task.id}: ${made.length} / ${photosIn.length} photos made`));
                 return;
             }
 
@@ -1176,7 +1186,7 @@ export default function AiStudioWorker() {
             const failedPhotos = settled.filter(r => r.status === "rejected");
             // The whole task fails only when no photo came out at all
             if (photos.length === 0) throw new Error(failedPhotos[0]?.reason?.message || "Koi photo nahi bani");
-            if (failedPhotos.length) log(`Task #${task.id}: ${failedPhotos.length} photo fail, ${photos.length} save hui`);
+            if (failedPhotos.length) log(tl(`Task #${task.id}: ${failedPhotos.length} photo fail, ${photos.length} save hui`, `Task #${task.id}: ${failedPhotos.length} photos failed, ${photos.length} saved`));
             const cloudUrls = photos.map(p => p.cloud).filter(Boolean);
             const imgbbUrls = photos.map(p => p.imgbb).filter(Boolean);
             const scores = photos.map(p => p.score).filter(s => s != null);
@@ -1249,7 +1259,7 @@ export default function AiStudioWorker() {
                 taskLimiter(async () => {
                     try {
                         if (!pausedRef.current && await claim(task.id)) {
-                            log(`Task #${task.id} mila (${task.task_type}, ${task.model})`);
+                            log(tl(`Task #${task.id} mila (${task.task_type}, ${task.model})`, `Task #${task.id} received (${task.task_type}, ${task.model})`));
                             await withTimeout(processTask({ ...task, status: 'processing' }), (settingsRef.current.task_timeout_sec || 300) * 1000);
                         }
                     } catch (err) {
@@ -1258,7 +1268,7 @@ export default function AiStudioWorker() {
                     } finally {
                         inFlight.current.delete(task.id);
                         setRunning(inFlight.current.size);
-                        if (drainRef.current && inFlight.current.size === 0) log('Drain complete: ab is tab ko band kar sakte ho');
+                        if (drainRef.current && inFlight.current.size === 0) log(tl('Drain complete: ab is tab ko band kar sakte ho', 'Drain complete: you can close this tab now'));
                         // Instant slot fill: immediately check for remaining tasks without waiting 2 seconds
                         if (!pausedRef.current && !drainRef.current && inFlight.current.size < dynamicTaskConcurrencyRef.current) {
                             kickRef.current();
@@ -1365,7 +1375,7 @@ export default function AiStudioWorker() {
             .subscribe();
         } catch (err) {
             // No realtime here (for example, a sandboxed preview): the timers still keep the worker going
-            log('Realtime band hai, timer se chalega: ' + err.message);
+            log(tl('Realtime band hai, timer se chalega: ', 'Realtime is off, running on the timer: ') + err.message);
         }
 
         // Tab closing: free this worker's tasks right away
@@ -1411,7 +1421,7 @@ export default function AiStudioWorker() {
                     </div>
                     <div>
                         <h1 className="text-lg font-extrabold">AI Studio <span className="text-yellow-300">Worker</span></h1>
-                        <p className="text-[11px] text-stone-400">Task uthata hai, model chalata hai, photo ImgBB + Cloudinary par upload karke save karta hai</p>
+                        <p className="text-[11px] text-stone-400">{t('Task uthata hai, model chalata hai, photo ImgBB + Cloudinary par upload karke save karta hai', 'Picks up a task, runs the model, uploads the photo to ImgBB + Cloudinary and saves the result')}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
@@ -1439,9 +1449,9 @@ export default function AiStudioWorker() {
                                 purgeAllMemory();
                                 const fresh = getMemoryStats();
                                 setMemStats(fresh);
-                                log('RAM & Cache memory saaf kar di gayi');
+                                log(tl('RAM & Cache memory saaf kar di gayi', 'RAM and cache memory cleared'));
                             }}
-                            title="RAM aur Caches abhi saaf karein"
+                            title={t('RAM aur Caches abhi saaf karein', 'Clear RAM and caches now')}
                             className="ml-1 text-[10px] text-yellow-300 hover:text-yellow-200 underline font-sans font-bold"
                         >
                             Purge
@@ -1451,6 +1461,7 @@ export default function AiStudioWorker() {
                     {!sb && <button onClick={connect} disabled={!!sb} className="h-9 px-4 rounded-xl bg-yellow-400 text-stone-950 font-black disabled:opacity-40">Connect</button>}
                     <span className="font-mono font-bold text-yellow-300">{workerId || '—'}</span>
                     <span className={`px-2.5 py-1 rounded-lg border font-bold ${statusStyle}`}>{status}</span>
+                    <LangToggle />
                 </div>
             </header>
 
@@ -1500,10 +1511,10 @@ export default function AiStudioWorker() {
             {/* Numbers */}
             <section className="grid gap-3 grid-cols-2 sm:grid-cols-6">
                 {[
-                    ['Abhi chal rahe', running],
+                    [t('Abhi chal rahe', 'Running now'), running],
                     ['Done', myCounts.done ?? '—'],
                     ['Failed', myCounts.failed ?? '—'],
-                    ['Ek saath tasks', isTurboMode ? `${currentConcurrency} (⚡ Turbo)` : currentConcurrency],
+                    [t('Ek saath tasks', 'Tasks at once'), isTurboMode ? `${currentConcurrency} (⚡ Turbo)` : currentConcurrency],
                     ['Memory (RAM)', memStats.supported ? `${memStats.usedMB} MB` : `${inputCache.size} Cache`],
                     ['Recycle (Done/Limit)', `${sessionTasksDone} / ${settings.worker_recycle_after_tasks || 50}`]
                 ].map(([label, value]) => (
@@ -1513,27 +1524,27 @@ export default function AiStudioWorker() {
                     </div>
                 ))}
             </section>
-            <p className="text-[11px] text-stone-500">Upload: {settings.cloudinary_enabled ? 'Cloudinary ON' : 'Cloudinary OFF'} · {settings.imgbb_enabled ? 'ImgBB ON' : 'ImgBB OFF'} (admin se)</p>
-            <p className="text-[11px] text-stone-500">Model calls ek saath: {isTurboMode ? 16 : settings.gemini_concurrency} · Photos per task: {settings.photos_per_task_max} · ⚡ Auto-Scaler: Rush par limit automatic 20 ho jati hai (&lt; 1 min response guarantee)</p>
+            <p className="text-[11px] text-stone-500">Upload: {settings.cloudinary_enabled ? 'Cloudinary ON' : 'Cloudinary OFF'} · {settings.imgbb_enabled ? 'ImgBB ON' : 'ImgBB OFF'} {t('(admin se)', '(set by admin)')}</p>
+            <p className="text-[11px] text-stone-500">{t('Model calls ek saath:', 'Model calls at once:')} {isTurboMode ? 16 : settings.gemini_concurrency} · Photos per task: {settings.photos_per_task_max} · ⚡ Auto-Scaler: {t('Rush par limit automatic 20 ho jati hai (< 1 min response guarantee)', 'Under rush, the limit goes up to 20 automatically (< 1 min response guarantee)')}</p>
 
-            {drain && <p className="text-xs text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-xl px-3 py-2">Drain mode: naya task nahi lega, chal rahe tasks khatam honge.</p>}
-            {settings.budget_left != null && <p className="text-[11px] text-stone-400">Aaj ka bacha Gemini budget: {settings.budget_left}</p>}
-            {settings.disabled_models?.length > 0 && <p className="text-[11px] text-stone-400">Band models: {settings.disabled_models.join(', ')}</p>}
+            {drain && <p className="text-xs text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-xl px-3 py-2">{t('Drain mode: naya task nahi lega, chal rahe tasks khatam honge.', 'Drain mode: no new tasks will be taken; running tasks will finish.')}</p>}
+            {settings.budget_left != null && <p className="text-[11px] text-stone-400">{t('Aaj ka bacha Gemini budget:', 'Gemini budget left today:')} {settings.budget_left}</p>}
+            {settings.disabled_models?.length > 0 && <p className="text-[11px] text-stone-400">{t('Band models:', 'Disabled models:')} {settings.disabled_models.join(', ')}</p>}
             {!paused && (
                 <button type="button" onClick={() => autoPause('Worker ne khud pause kiya (screen se)')} className="h-9 px-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-200 text-xs font-bold">
-                    Pause karo (naya task mat lo)
+                    {t('Pause karo (naya task mat lo)', 'Pause (take no new tasks)')}
                 </button>
             )}
             {paused && (
                 <p className="text-xs text-rose-200 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" /> Ye worker pause hai. Naya task nahi lega, jo chal raha hai wo complete hoga. Wapas chalu karne ke liye admin ke Workers screen se Resume karein.
+                    <AlertCircle className="w-4 h-4" /> {t('Ye worker pause hai. Naya task nahi lega, jo chal raha hai wo complete hoga. Wapas chalu karne ke liye admin ke Workers screen se Resume karein.', 'This worker is paused. It will not take new tasks; running tasks will finish. To resume, click Resume on the admin Workers screen.')}
                 </p>
             )}
 
             {/* My tasks: a table with tabs and pages (loaded on click only) */}
             <section className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-sm font-extrabold flex items-center gap-2"><ImageIcon className="w-4 h-4 text-yellow-300" /> Is worker ke tasks</h2>
+                    <h2 className="text-sm font-extrabold flex items-center gap-2"><ImageIcon className="w-4 h-4 text-yellow-300" /> {t('Is worker ke tasks', "This worker's tasks")}</h2>
                     <div className="flex gap-1.5">
                         {[['pending', 'Pending'], ['processing', 'Processing'], ['done', 'Completed'], ['failed', 'Failed']].map(([key, label]) => (
                             <button key={key} type="button" onClick={() => pickTab(key)} className={`h-8 px-3 rounded-lg text-xs font-bold border ${myTab === key ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300'}`}>{label}{myCounts[key] != null ? ` (${myCounts[key]})` : ''}</button>
@@ -1542,7 +1553,7 @@ export default function AiStudioWorker() {
                 </div>
                 <div className="overflow-x-auto bg-stone-900 border border-white/10 rounded-2xl">
                     <table className="w-full text-xs">
-                        <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">App</th><th className="p-2">Kaam</th><th className="p-2">Model</th><th className="p-2">Result</th><th className="p-2">Error</th></tr></thead>
+                        <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">App</th><th className="p-2">{t('Kaam', 'Task')}</th><th className="p-2">Model</th><th className="p-2">Result</th><th className="p-2">Error</th></tr></thead>
                         <tbody>
                             {myRows.map(t => (
                                 <tr key={t.id} className="border-t border-white/5 align-top">
@@ -1556,12 +1567,12 @@ export default function AiStudioWorker() {
                         </tbody>
                     </table>
                 </div>
-                {myRows.length === 0 && <p className="text-center text-xs text-stone-500 py-6">{myCounts[myTab] == null ? 'Upar se tab chunein' : 'Is tab mein koi task nahi.'}</p>}
+                {myRows.length === 0 && <p className="text-center text-xs text-stone-500 py-6">{myCounts[myTab] == null ? t('Upar se tab chunein', 'Pick a tab above') : t('Is tab mein koi task nahi.', 'No tasks in this tab.')}</p>}
                 {myCounts[myTab] > MY_PAGE_SIZE && (
                     <div className="flex items-center justify-between text-xs">
-                        <button type="button" disabled={myPage === 0} onClick={() => goPage(myPage - 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-stone-900 disabled:opacity-40">Pichhla</button>
+                        <button type="button" disabled={myPage === 0} onClick={() => goPage(myPage - 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-stone-900 disabled:opacity-40">{t('Pichhla', 'Previous')}</button>
                         <span className="font-mono text-stone-400">Page {myPage + 1} / {Math.ceil(myCounts[myTab] / MY_PAGE_SIZE)}</span>
-                        <button type="button" disabled={(myPage + 1) * MY_PAGE_SIZE >= myCounts[myTab]} onClick={() => goPage(myPage + 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-stone-900 disabled:opacity-40">Agla</button>
+                        <button type="button" disabled={(myPage + 1) * MY_PAGE_SIZE >= myCounts[myTab]} onClick={() => goPage(myPage + 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-stone-900 disabled:opacity-40">{t('Agla', 'Next')}</button>
                     </div>
                 )}
             </section>
@@ -1579,7 +1590,7 @@ export default function AiStudioWorker() {
                                 type="button"
                                 onClick={() => setLogs([])}
                                 className="text-[10px] text-stone-400 hover:text-yellow-300 underline font-mono ml-1"
-                                title="Abhi log saaf karein"
+                                title={t('Abhi log saaf karein', 'Clear the log now')}
                             >
                                 Clear
                             </button>
@@ -1588,10 +1599,10 @@ export default function AiStudioWorker() {
                     <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
                         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-semibold">
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                            DB Refresh: Har {refreshIntervalSec}s me
+                            {t(`DB Refresh: Har ${refreshIntervalSec}s me`, `DB Refresh: every ${refreshIntervalSec}s`)}
                         </span>
                         <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold">
-                            Agla DB fetch: <span className="text-yellow-300 font-bold font-mono">{nextDbSec}s</span>
+                            {t('Agla DB fetch:', 'Next DB fetch:')} <span className="text-yellow-300 font-bold font-mono">{nextDbSec}s</span>
                         </span>
                         <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold" title="Auto-purges cache when task ends or high RAM">
                             RAM: <span className="text-emerald-300 font-bold font-mono">{memStats.supported ? `${memStats.usedMB} MB` : 'Safe'}</span>
@@ -1601,17 +1612,17 @@ export default function AiStudioWorker() {
                         </span>
                         {lastDbFetch && (
                             <span className="text-stone-400 text-[10px]">
-                                (Aakhri fetch: {lastDbFetch})
+                                {t(`(Aakhri fetch: ${lastDbFetch})`, `(Last fetch: ${lastDbFetch})`)}
                             </span>
                         )}
                     </div>
                 </div>
                 <div className="max-h-56 overflow-auto space-y-1 font-mono text-[11px] text-stone-300">
                     {logs.map((l, i) => <p key={i}><span className="text-stone-500">{l.t}</span> {l.text}</p>)}
-                    {logs.length === 0 && <p className="text-stone-500">Connect karo to log yahan aayega.</p>}
+                    {logs.length === 0 && <p className="text-stone-500">{t('Connect karo to log yahan aayega.', 'Connect to see the log here.')}</p>}
                 </div>
             </section>
-            {running > 0 && <p className="text-[10px] text-stone-500 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> {running} task chal rahe hain</p>}
+            {running > 0 && <p className="text-[10px] text-stone-500 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> {t(`${running} task chal rahe hain`, `${running} tasks running`)}</p>}
         </div>
     );
 }

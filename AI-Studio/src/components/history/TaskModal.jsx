@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { X, Download, Terminal, CheckCircle2, AlertCircle, Database, MessageSquare, Copy, Check, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge';
 import { formatDuration, timeAgo } from '../../utils/formatters';
+import { useT } from '../../i18n/lang';
 
 export function TaskModal({ task, onClose }) {
+    const t = useT();
     if (!task) return null;
 
     const [copiedText, setCopiedText] = useState(false);
@@ -76,7 +78,10 @@ export function TaskModal({ task, onClose }) {
                                     </code>
                                 </div>
                                 <p className="text-[11px] text-stone-400 mt-0.5">
-                                    Ye record direct SQL Database table <strong className="text-slate-300 font-mono">ai_studio_tasks</strong> se fetch kiya gaya hai.
+                                    {t(
+                                        <>Ye record direct SQL Database table <strong className="text-slate-300 font-mono">ai_studio_tasks</strong> se fetch kiya gaya hai.</>,
+                                        <>This record was fetched directly from the SQL Database table <strong className="text-slate-300 font-mono">ai_studio_tasks</strong>.</>
+                                    )}
                                 </p>
                             </div>
                         </div>

@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Upload, X, Link, Image as ImageIcon, ExternalLink, Check } from 'lucide-react';
 import { INPUT_COLUMN, labelFor } from '../../constants/formDefaults';
 import { uploadFile } from '../../api/uploadService';
+import { useT } from '../../i18n/lang';
 
 export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
+    const t = useT();
     const inputs = Array.isArray(type?.inputs) ? type.inputs : [];
     if (inputs.length === 0) return null;
 
@@ -13,11 +15,11 @@ export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
         const file = e.target.files?.[0];
         if (!file) return;
         setUploadingSlot(col);
-        if (onSetMsg) onSetMsg('Photo upload ho rahi hai...');
+        if (onSetMsg) onSetMsg(t('Photo upload ho rahi hai...', 'Uploading photo...'));
         try {
             const url = await uploadFile(file);
             setForm(prev => ({ ...prev, [col]: url }));
-            if (onSetMsg) onSetMsg('Photo successfully upload ho gayi!');
+            if (onSetMsg) onSetMsg(t('Photo successfully upload ho gayi!', 'Photo uploaded successfully!'));
         } catch (err) {
             if (onSetMsg) onSetMsg('Upload error: ' + err.message);
         } finally {
@@ -39,7 +41,7 @@ export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
                     <span>Required Photo References ({inputs.length} Slots)</span>
                     <span className="text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full font-mono">
-                        Upload File ya Direct URL
+                        {t('Upload File ya Direct URL', 'Upload File or Direct URL')}
                     </span>
                 </label>
             </div>
@@ -50,16 +52,25 @@ export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
                     const val = form[col] || '';
                     const isOptional = type.optional?.includes(key);
                     const isUploading = uploadingSlot === col;
+                    const isMissing = !isOptional && (!val || !val.trim() || val === 'null' || val === 'undefined');
 
                     return (
-                        <div key={key} className="bg-[#080b12] border border-slate-800 rounded-2xl p-3.5 space-y-3 transition-colors hover:border-slate-700">
+                        <div key={key} className={`rounded-2xl p-3.5 space-y-3 transition-all ${
+                            isMissing 
+                                ? 'bg-rose-950/15 border-2 border-rose-500/50 shadow-sm shadow-rose-950/30' 
+                                : 'bg-[#080b12] border border-slate-800 hover:border-slate-700'
+                        }`}>
                             {/* Card Header: Slot Title & Clear Button */}
                             <div className="flex items-center justify-between text-xs">
                                 <span className="font-bold text-slate-200 flex items-center gap-1.5">
                                     <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
                                     <span>{labelFor(type, key)}</span>
                                     {!isOptional ? (
-                                        <span className="text-amber-400 font-bold">*</span>
+                                        isMissing ? (
+                                            <span className="text-rose-300 bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold px-1.5 py-0.5 rounded animate-pulse">Photo Required *</span>
+                                        ) : (
+                                            <span className="text-amber-400 font-bold">*</span>
+                                        )
                                     ) : (
                                         <span className="text-slate-500 font-mono text-[10px]">(Opt)</span>
                                     )}
@@ -136,7 +147,7 @@ export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
                                         type="url"
                                         value={val}
                                         onChange={e => handleUrlChange(col, e.target.value)}
-                                        placeholder="https://res.cloudinary.com/... ya direct image URL"
+                                        placeholder={t('https://res.cloudinary.com/... ya direct image URL', 'https://res.cloudinary.com/... or direct image URL')}
                                         className="w-full h-8 bg-slate-900/90 border border-slate-800 focus:border-amber-400 rounded-lg px-2.5 text-xs text-slate-200 font-mono placeholder-slate-600 focus:outline-none transition-colors"
                                     />
                                 </div>

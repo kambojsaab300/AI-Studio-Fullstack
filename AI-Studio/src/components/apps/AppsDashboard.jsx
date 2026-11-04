@@ -8,9 +8,11 @@ import { AppCreateModal } from './AppCreateModal';
 import { AppToolMatrix } from './AppToolMatrix';
 import { AppWorkspaceView } from './AppWorkspaceView';
 import { TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function AppsDashboard() {
     const { sb, apps, appTasks, catalog, loadCatalog, setMsg } = useAdmin();
+    const t = useT();
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [selectedApp, setSelectedApp] = useState(null);
     const [activeSubTab, setActiveSubTab] = useState('workspace'); // 'workspace' | 'matrix'
@@ -37,9 +39,9 @@ export function AppsDashboard() {
 
     const handleDeleteApp = async (appId, label) => {
         if (['weargen', 'ppp'].includes(appId)) {
-            return setMsg('Default system apps (WearGen, PPP) delete nahi ki ja sakti.');
+            return setMsg(t('Default system apps (WearGen, PPP) delete nahi ki ja sakti.', 'Default system apps (WearGen, PPP) cannot be deleted.'));
         }
-        if (!window.confirm(`Kya aap pakka App "${label}" (${appId}) ko delete karna chahte hain?`)) return;
+        if (!window.confirm(t(`Kya aap pakka App "${label}" (${appId}) ko delete karna chahte hain?`, `Are you sure you want to delete App "${label}" (${appId})?`))) return;
 
         try {
             // Delete links first
@@ -49,7 +51,7 @@ export function AppsDashboard() {
             if (error) throw error;
             if (selectedApp?.app_id === appId) setSelectedApp(null);
             loadCatalog();
-            setMsg(`App "${label}" delete ho gayi.`);
+            setMsg(t(`App "${label}" delete ho gayi.`, `App "${label}" deleted.`));
         } catch (err) {
             setMsg('App delete error: ' + err.message);
         }

@@ -3,9 +3,11 @@ import { Search, CheckSquare, Square, Layers, Sparkles, Filter } from 'lucide-re
 import { useAdmin } from '../../context/AdminContext';
 import { TOOL_CATEGORIES, getToolCategory } from '../../constants/categories';
 import { TABLES } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function AppToolMatrix({ app, onClose }) {
     const { sb, catalog, appTasks, loadCatalog, setMsg } = useAdmin();
+    const t = useT();
     const [search, setSearch] = useState('');
     const [selectedCat, setSelectedCat] = useState('all');
     const [updating, setUpdating] = useState(false);
@@ -46,7 +48,7 @@ export function AppToolMatrix({ app, onClose }) {
                 await sb.from(TABLES.APP_TASKS).insert(toAdd);
             }
             loadCatalog();
-            setMsg(`Saare ${catalog.length} tools "${app.label}" ko assign kar diye gaye!`);
+            setMsg(t(`Saare ${catalog.length} tools "${app.label}" ko assign kar diye gaye!`, `All ${catalog.length} tools assigned to "${app.label}"!`));
         } catch (err) {
             setMsg('Assign all error: ' + err.message);
         } finally {
@@ -55,12 +57,12 @@ export function AppToolMatrix({ app, onClose }) {
     };
 
     const handleUnassignAll = async () => {
-        if (!window.confirm(`Kya aap pakka "${app.label}" se saare tools unassign karna chahte hain?`)) return;
+        if (!window.confirm(t(`Kya aap pakka "${app.label}" se saare tools unassign karna chahte hain?`, `Are you sure you want to unassign all tools from "${app.label}"?`))) return;
         setUpdating(true);
         try {
             await sb.from(TABLES.APP_TASKS).delete().eq('app_id', appId);
             loadCatalog();
-            setMsg(`Saare tools "${app.label}" se unassign ho gaye.`);
+            setMsg(t(`Saare tools "${app.label}" se unassign ho gaye.`, `All tools unassigned from "${app.label}".`));
         } catch (err) {
             setMsg('Unassign all error: ' + err.message);
         } finally {

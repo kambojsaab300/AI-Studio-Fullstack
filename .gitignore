@@ -8,6 +8,10 @@ ehthumbs.db
 Thumbs.db
 Desktop.ini
 
+# Deployment scripts with credentials
+scripts/sftp_deploy.py
+scripts/fast_sftp_deploy.py
+
 # Standalone Git Backup
 .git_standalone_backup/
 AI-Studio/.git_standalone_backup/

@@ -87,8 +87,9 @@ namespace AIStudio.Api.Controllers
 
         [HttpPost("rest/v1/rpc/{functionName}")]
         [HttpPost("api/rpc/{functionName}")]
-        public async Task<IActionResult> HandleRpc(string functionName, [FromBody] JsonElement body)
+        public async Task<IActionResult> HandleRpc(string functionName, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] JsonElement? rawBody = null)
         {
+            JsonElement body = rawBody.HasValue ? rawBody.Value : default;
             try
             {
                 switch (functionName.ToLowerInvariant())
@@ -125,6 +126,12 @@ namespace AIStudio.Api.Controllers
                             Priority = GetInt(payload, "priority", 0),
                             FamilyRoleKeys = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("family_role_keys", out var fr) ? fr.ToString() : null
                         };
+
+                        var (isValid, errorMsg) = await _db.ValidateTaskParametersAsync(task);
+                        if (!isValid)
+                        {
+                            return BadRequest(new { success = false, error = errorMsg, message = errorMsg });
+                        }
 
                         long id = await _db.CreateTaskAsync(task);
                         return Ok(id);

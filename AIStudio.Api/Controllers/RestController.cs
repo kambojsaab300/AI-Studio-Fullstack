@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AIStudio.Api.Models;
 using AIStudio.Api.Services;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
@@ -389,6 +390,30 @@ namespace AIStudio.Api.Controllers
             else if (body.ValueKind == JsonValueKind.Object)
             {
                 items.Add(body);
+            }
+
+            // Strictly validate required task parameters for ai_studio_tasks table
+            if (table.Equals("ai_studio_tasks", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var item in items)
+                {
+                    var task = new TaskItem
+                    {
+                        TaskType = item.TryGetProperty("task_type", out var tt) && tt.ValueKind == JsonValueKind.String ? tt.GetString() ?? "" : "",
+                        Model = item.TryGetProperty("model", out var mm) && mm.ValueKind == JsonValueKind.String ? mm.GetString() ?? "" : "",
+                        Prompt = item.TryGetProperty("prompt", out var pr) && pr.ValueKind == JsonValueKind.String ? pr.GetString() : null,
+                        FaceImageUrl = item.TryGetProperty("face_image_url", out var fi) && fi.ValueKind == JsonValueKind.String ? fi.GetString() : null,
+                        StyleImageUrl = item.TryGetProperty("style_image_url", out var si) && si.ValueKind == JsonValueKind.String ? si.GetString() : null,
+                        InputImageUrl = item.TryGetProperty("input_image_url", out var ii) && ii.ValueKind == JsonValueKind.String ? ii.GetString() : null,
+                        ExtraImageUrls = item.TryGetProperty("extra_image_urls", out var ei) ? ei.ToString() : null,
+                    };
+
+                    var (isValid, errorMsg) = await _db.ValidateTaskParametersAsync(task);
+                    if (!isValid)
+                    {
+                        return BadRequest(new { success = false, error = errorMsg, message = errorMsg });
+                    }
+                }
             }
 
             if (conn.State != System.Data.ConnectionState.Open) conn.Open();

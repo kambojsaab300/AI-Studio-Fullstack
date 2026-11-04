@@ -14,9 +14,11 @@ import { MODEL_CAPS, capsOf } from '../../constants/models';
 import { getToolCategory } from '../../constants/categories';
 import { rowFromForm, requestPreview, problemsFor } from '../../utils/taskHelpers';
 import { API } from '../../api/config';
+import { useT } from '../../i18n/lang';
 
 export function StudioScreen() {
     const { sb, catalog, models, prompts, syncLiveTasks, setLiveTasks, setMsg } = useAdmin();
+    const t = useT();
     const [form, setForm] = useState(EMPTY_FORM);
     const [mobileTab, setMobileTab] = useState('studio'); // 'studio' | 'json'
 
@@ -49,10 +51,10 @@ export function StudioScreen() {
     };
 
     const handleSendTask = async () => {
-        if (problems.length) {
+        if (problems && problems.length > 0) {
             const errText = problems.join(', ');
-            setBtnFeedback({ type: 'error', message: errText });
-            setMsg('Pehle ye theek karo: ' + errText);
+            setBtnFeedback({ type: 'error', message: t('❌ Zaroori parameters missing: ', '❌ Required parameters missing: ') + errText });
+            setMsg(t('❌ Zaroori parameters missing: ', '❌ Required parameters missing: ') + errText);
             return;
         }
 
@@ -61,14 +63,15 @@ export function StudioScreen() {
         try {
             const { data, error } = await sb.rpc(API.CREATE_TASK, { p_payload: row });
             if (error) {
-                const errText = 'Task nahi bana: ' + (error.message || JSON.stringify(error));
+                const errMsg = error.message || error.error || (typeof error === 'string' ? error : JSON.stringify(error));
+                const errText = t('❌ Task create nahi ho saka: ', '❌ Could not create task: ') + errMsg;
                 setBtnFeedback({ type: 'error', message: errText });
                 setMsg(errText);
                 return;
             }
 
             const taskId = typeof data === 'number' ? data : (data?.[0]?.id || data?.id || (Array.isArray(data) && data[0]) || data);
-            const successMsg = `⚡ Task #${taskId} queue mein successfully dispatch ho gaya! Worker ise process karega.`;
+            const successMsg = t(`⚡ Task #${taskId} queue mein successfully dispatch ho gaya! Worker ise process karega.`, `⚡ Task #${taskId} dispatched to the queue successfully! A worker will process it.`);
             setBtnFeedback({ type: 'success', message: successMsg });
             setMsg(successMsg);
 

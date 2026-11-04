@@ -1,97 +1,141 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Studio • Platform Hub</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>AI Studio - Portal Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
-                        mono: ['"JetBrains Mono"', 'monospace'],
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body {
-            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-            background-color: #07080d;
-            color: #f1f5f9;
-        }
-    </style>
 </head>
-<body class="bg-[#07080d] text-slate-100 min-h-screen flex items-center justify-center p-4 sm:p-6 antialiased selection:bg-amber-400 selection:text-black">
-    <div class="max-w-xl w-full bg-[#0e1320] border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
-        <div class="text-center space-y-2">
-            <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400/10 text-amber-300 border border-amber-400/20 rounded-full text-xs font-mono font-bold">
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                AI Studio Production Suite
-            </span>
-            <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-white">Select Application Portal</h1>
-            <p class="text-slate-400 text-xs sm:text-sm">Choose which portal or client workspace you want to launch</p>
+<body class="bg-stone-950 text-stone-100 min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-xl w-full bg-stone-900 border border-stone-800 rounded-2xl p-8 shadow-2xl">
+        <div class="text-center mb-6">
+            <span class="inline-block px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-xs font-medium tracking-wide mb-3">AI Studio Suite</span>
+            <h1 class="text-3xl font-bold tracking-tight text-white mb-2">Select Portal to Launch</h1>
+            <p class="text-stone-400 text-sm">Choose which application view you want to open</p>
         </div>
 
-        <!-- Portals Grid -->
-        <div class="space-y-3">
-            <!-- 1. Dedicated Client Apps (WearGen, PPP, etc.) -->
-            <a href="/app/weargen" class="block p-4 sm:p-5 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-400/10 via-[#0a0d17] to-[#0a0d17] hover:border-amber-400 hover:from-amber-400/20 transition-all group shadow-lg">
-                <div class="flex items-center justify-between">
-                    <div class="space-y-1">
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg">👗</span>
-                            <span class="font-extrabold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors">WearGen Client Workspace</span>
-                            <span class="text-[10px] font-mono bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2 py-0.5 rounded-full font-bold">App Portal</span>
-                        </div>
-                        <p class="text-xs text-slate-400">Launch dedicated client workspace with assigned AI fashion & generation tools</p>
-                    </div>
-                    <span class="text-amber-400 text-xl font-bold transition-transform group-hover:translate-x-1 ml-3">→</span>
-                </div>
-            </a>
-
-            <!-- 2. Master Admin Portal -->
-            <a href="/admin" class="block p-4 sm:p-5 rounded-2xl border border-slate-800 bg-[#080b12] hover:border-slate-700 hover:bg-[#0c101b] transition-all group shadow-lg">
-                <div class="flex items-center justify-between">
-                    <div class="space-y-1">
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg">⚡</span>
-                            <span class="font-extrabold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors">Master Admin Suite</span>
-                            <span class="text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full font-bold">Admin</span>
-                        </div>
-                        <p class="text-xs text-slate-400">Complete AI Studio manager: Tool Builder, App Matrix, Live Workers & Task History</p>
-                    </div>
-                    <span class="text-slate-500 group-hover:text-white text-xl font-bold transition-transform group-hover:translate-x-1 ml-3">→</span>
-                </div>
-            </a>
-
-            <!-- 3. Customer Photo Studio -->
-            <a href="/customer" class="block p-4 sm:p-5 rounded-2xl border border-slate-800 bg-[#080b12] hover:border-slate-700 hover:bg-[#0c101b] transition-all group shadow-lg">
-                <div class="flex items-center justify-between">
-                    <div class="space-y-1">
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg">📸</span>
-                            <span class="font-extrabold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors">Customer Photo Studio</span>
-                            <span class="text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full font-bold">Studio</span>
-                        </div>
-                        <p class="text-xs text-slate-400">Choose features, upload photos, prompt AI and download generated results</p>
-                    </div>
-                    <span class="text-slate-500 group-hover:text-white text-xl font-bold transition-transform group-hover:translate-x-1 ml-3">→</span>
-                </div>
-            </a>
+        <!-- API Backend Configuration Card -->
+        <div class="mb-6 p-4 rounded-xl border border-stone-800 bg-stone-950/80">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-stone-400">Backend API URL</span>
+                <span id="apiStatus" class="inline-flex items-center gap-1.5 text-xs text-stone-400">
+                    <span class="w-2 h-2 rounded-full bg-stone-500"></span> Checking...
+                </span>
+            </div>
+            <div class="flex gap-2">
+                <input id="apiUrlInput" type="text" class="flex-1 bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500" placeholder="http://localhost:5005" />
+                <button id="saveApiBtn" onclick="saveApiUrl()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-stone-950 font-semibold text-xs rounded-lg transition-colors">Set API</button>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
+                <button onclick="setApiPreset('http://localhost:5005')" class="text-stone-400 hover:text-white underline">Local (5005)</button>
+                <span class="text-stone-600">•</span>
+                <button onclick="setApiPreset('https://aistudio.runasp.net')" class="text-amber-400 hover:text-amber-300 underline font-medium">Live API (MonsterASP HTTPS)</button>
+                <span class="text-stone-600">•</span>
+                <button onclick="setApiPreset('https://aistudio-api.loca.lt')" class="text-stone-400 hover:text-white underline">Localtunnel</button>
+            </div>
         </div>
 
-        <div class="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500 font-mono">
-            <span>Live API: https://aistudio.runasp.net</span>
-            <a href="/swagger" class="hover:text-amber-400 transition-colors">API Docs (Swagger) ↗</a>
+        <div class="space-y-4">
+            <a id="linkCustomer" href="/customer.html" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Customer Portal</div>
+                        <div class="text-xs text-stone-400 mt-1">Choose features, send photos/prompts, view generated results</div>
+                    </div>
+                    <span class="text-stone-500 group-hover:text-amber-400 text-xl font-bold transition-transform group-hover:translate-x-1">→</span>
+                </div>
+            </a>
+
+            <a id="linkAdmin" href="/admin.html" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Admin Portal</div>
+                        <div class="text-xs text-stone-400 mt-1">Manage workers, tools, features, prompts, settings & alerts</div>
+                    </div>
+                    <span class="text-stone-500 group-hover:text-amber-400 text-xl font-bold transition-transform group-hover:translate-x-1">→</span>
+                </div>
+            </a>
+
+            <a id="linkApp" href="/app.html?app=weargen" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Client App Portal (WearGen & PPP)</div>
+                        <div class="text-xs text-stone-400 mt-1">Multi-tenant client app workspace, dedicated tools & live tasks</div>
+                    </div>
+                    <span class="text-stone-500 group-hover:text-amber-400 text-xl font-bold transition-transform group-hover:translate-x-1">→</span>
+                </div>
+            </a>
+
+            <a id="linkWorker" href="/worker.html" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Worker Portal</div>
+                        <div class="text-xs text-stone-400 mt-1">Task queue, Gemini processor, face check & upload pipeline</div>
+                    </div>
+                    <span class="text-stone-500 group-hover:text-amber-400 text-xl font-bold transition-transform group-hover:translate-x-1">→</span>
+                </div>
+            </a>
         </div>
     </div>
+
+    <script>
+        const input = document.getElementById('apiUrlInput');
+        const statusEl = document.getElementById('apiStatus');
+
+        function getCurrentApi() {
+            const queryApi = new URLSearchParams(window.location.search).get('api');
+            if (queryApi) return queryApi;
+            const saved = localStorage.getItem('aistudio_api_url');
+            if (saved) return saved;
+            if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                return 'https://aistudio.runasp.net';
+            }
+            return 'http://localhost:5005';
+        }
+
+        function updateLinks(apiUrl) {
+            const cleanUrl = (apiUrl || 'http://localhost:5005').replace(/\/$/, "");
+            document.querySelectorAll('.portal-link').forEach(a => {
+                const baseHref = a.getAttribute('href').split('?')[0];
+                a.href = `${baseHref}?api=${encodeURIComponent(cleanUrl)}`;
+            });
+        }
+
+        async function checkApiHealth(apiUrl) {
+            statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Testing...';
+            try {
+                const res = await fetch(`${apiUrl}/`, {
+                    headers: { 'Bypass-Tunnel-Reminder': 'true' }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span class="text-emerald-400 font-medium">Online (' + (data.database || '.NET') + ')</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> <span class="text-rose-400 font-medium">HTTP ' + res.status + '</span>';
+                }
+            } catch (err) {
+                statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> <span class="text-rose-400 font-medium">Offline / Unreachable</span>';
+            }
+        }
+
+        function setApiPreset(url) {
+            input.value = url;
+            saveApiUrl();
+        }
+
+        function saveApiUrl() {
+            const val = input.value.trim().replace(/\/$/, "");
+            if (val) {
+                localStorage.setItem('aistudio_api_url', val);
+                updateLinks(val);
+                checkApiHealth(val);
+            }
+        }
+
+        const initialApi = getCurrentApi();
+        input.value = initialApi;
+        updateLinks(initialApi);
+        checkApiHealth(initialApi);
+    </script>
 </body>
 </html>

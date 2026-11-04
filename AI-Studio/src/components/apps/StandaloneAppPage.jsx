@@ -20,6 +20,7 @@ import { rowFromForm, requestPreview, problemsFor } from '../../utils/taskHelper
 import { formatDuration, timeAgo } from '../../utils/formatters';
 import { createAppService } from '../../api/appService';
 import { AppApiModal } from './AppApiModal';
+import { useT } from '../../i18n/lang';
 
 export function StandaloneAppPage({ defaultAppId }) {
     // 1. Determine App ID from URL path or query params
@@ -58,6 +59,7 @@ export function StandaloneAppPage({ defaultAppId }) {
     const [selectedCat, setSelectedCat] = useState('all');
     const [isGenerating, setIsGenerating] = useState(false);
     const [btnFeedback, setBtnFeedback] = useState(null);
+    const t = useT();
 
     // 2. Load App details & Assigned tools
     const loadAppData = useCallback(async () => {
@@ -176,9 +178,9 @@ export function StandaloneAppPage({ defaultAppId }) {
     };
 
     const handleSendTask = async () => {
-        if (problems.length) {
+        if (problems && problems.length > 0) {
             const errText = problems.join(', ');
-            setBtnFeedback({ type: 'error', message: errText });
+            setBtnFeedback({ type: 'error', message: t('❌ Zaroori parameters missing: ', '❌ Required parameters missing: ') + errText });
             return;
         }
 
@@ -187,12 +189,13 @@ export function StandaloneAppPage({ defaultAppId }) {
         try {
             const { success, taskId, error } = await appService.createTask(appId, row);
             if (!success || error) {
-                const errText = 'API Error: ' + (error?.message || JSON.stringify(error));
+                const errMsg = error?.message || error?.error || (typeof error === 'string' ? error : JSON.stringify(error));
+                const errText = t('❌ Task create nahi ho saka: ', '❌ Could not create task: ') + errMsg;
                 setBtnFeedback({ type: 'error', message: errText });
                 return;
             }
 
-            const successMsg = `⚡ Task #${taskId} queue mein successfully dispatch ho gaya! Worker ise process karega.`;
+            const successMsg = t(`⚡ Task #${taskId} queue mein successfully dispatch ho gaya! Worker ise process karega.`, `⚡ Task #${taskId} dispatched to the queue successfully! A worker will process it.`);
             setBtnFeedback({ type: 'success', message: successMsg });
 
             // Optimistic prepend
@@ -305,7 +308,10 @@ export function StandaloneAppPage({ defaultAppId }) {
                             </span>
                         </div>
                         <p className="text-xs text-slate-300 max-w-2xl">
-                            Ye page <span className="text-amber-300 font-bold">{appLabel}</span> ka private dedicated portal hai. Yahan run hone wale saare tasks direct database mein <code className="text-amber-400 bg-black/40 px-1 py-0.5 rounded">app_id: "{appId}"</code> ke sath record honge.
+                            {t(
+                                <>Ye page <span className="text-amber-300 font-bold">{appLabel}</span> ka private dedicated portal hai. Yahan run hone wale saare tasks direct database mein <code className="text-amber-400 bg-black/40 px-1 py-0.5 rounded">app_id: "{appId}"</code> ke sath record honge.</>,
+                                <>This page is the private dedicated portal for <span className="text-amber-300 font-bold">{appLabel}</span>. All tasks run here are recorded directly in the database with <code className="text-amber-400 bg-black/40 px-1 py-0.5 rounded">app_id: "{appId}"</code>.</>
+                            )}
                         </p>
                     </div>
 
@@ -519,7 +525,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                                 {appTasksList.length === 0 ? (
                                     <tr>
                                         <td colSpan={7} className="p-8 text-center text-stone-500 font-mono text-xs">
-                                            Is app ke under abhi koi task submit nahi hua. Upar form se task generate karein.
+                                            {t('Is app ke under abhi koi task submit nahi hua. Upar form se task generate karein.', 'No tasks have been submitted under this app yet. Generate a task using the form above.')}
                                         </td>
                                     </tr>
                                 ) : (

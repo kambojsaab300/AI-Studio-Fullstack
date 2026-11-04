@@ -52,8 +52,17 @@ export function PromptSection({ type, form, setForm }) {
             {/* Creative Prompt Input */}
             <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                    <label className="font-bold text-slate-200 flex items-center gap-1">
-                        Creative Prompt {type.promptRequired ? <span className="text-amber-400 font-bold">*</span> : <span className="text-slate-500 font-mono">(Opt)</span>}
+                    <label className="font-bold text-slate-200 flex items-center gap-1.5">
+                        <span>Creative Prompt</span>
+                        {type.promptRequired ? (
+                            !form.prompt?.trim() ? (
+                                <span className="text-rose-300 bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold px-1.5 py-0.5 rounded animate-pulse">Prompt Required *</span>
+                            ) : (
+                                <span className="text-amber-400 font-bold">*</span>
+                            )
+                        ) : (
+                            <span className="text-slate-500 font-mono text-[10px]">(Opt)</span>
+                        )}
                         <InfoTip text="Describe colors, lighting, studio background, pose specifics, and clothing details." />
                     </label>
                     <span className="text-[11px] text-slate-500 font-mono">{form.prompt.length} chars</span>
@@ -63,7 +72,11 @@ export function PromptSection({ type, form, setForm }) {
                     onChange={e => setForm({ ...form, prompt: e.target.value })}
                     rows={3}
                     placeholder={type.promptRequired ? "Describe what to generate, outfit colors, lighting, studio background..." : "Extra styling details, environment, lighting, pose specifics (optional)..."}
-                    className="w-full bg-[#080b12] border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors font-sans leading-relaxed"
+                    className={`w-full bg-[#080b12] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none transition-all font-sans leading-relaxed ${
+                        type.promptRequired && !form.prompt?.trim()
+                            ? 'border-2 border-rose-500/50 focus:border-rose-400 bg-rose-950/10'
+                            : 'border border-slate-800 focus:border-amber-400'
+                    }`}
                 />
             </div>
         </div>

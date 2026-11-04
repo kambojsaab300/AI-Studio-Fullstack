@@ -197,6 +197,12 @@ namespace AIStudio.Api.Controllers
                 FamilyRoleKeys = familyKeysJson
             };
 
+            var (isValid, errorMsg) = await _db.ValidateTaskParametersAsync(task);
+            if (!isValid)
+            {
+                return BadRequest(new { success = false, error = errorMsg, message = errorMsg });
+            }
+
             long id = await _db.CreateTaskAsync(task);
             return Ok(new { id, status = "pending" });
         }
