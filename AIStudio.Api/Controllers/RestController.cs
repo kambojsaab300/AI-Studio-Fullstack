@@ -355,7 +355,7 @@ namespace AIStudio.Api.Controllers
                 Response.Headers["X-Total-Count"] = totalCount.ToString();
             }
 
-            // Supabase header check for single object
+            // PostgREST / Standard REST header check for single object
             if (Request.Headers.TryGetValue("Accept", out var accept) && accept.ToString().Contains("application/vnd.pgrst.object+json"))
             {
                 return Ok(parsed.FirstOrDefault());
