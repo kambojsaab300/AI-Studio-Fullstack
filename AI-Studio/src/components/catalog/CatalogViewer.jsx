@@ -15,7 +15,7 @@ export function CatalogViewer() {
     });
 
     return (
-        <section className="bg-[#0b0e17] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
+        <section className="bg-[#121212] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
             {/* Header & Filter */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
                 <div className="flex items-center gap-3">

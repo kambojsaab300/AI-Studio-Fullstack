@@ -90,7 +90,7 @@ export const EMPTY_FORM = {
     model: 'gemini-3.1-flash-image-preview',
     prompt: '',
     aspect_ratio: '4:5',
-    image_size: '2K',
+    image_size: '720',
     face_image_url: '',
     style_image_url: '',
     input_image_url: '',

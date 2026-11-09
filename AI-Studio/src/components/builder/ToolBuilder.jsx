@@ -1,10 +1,63 @@
 import React, { useState, useMemo } from 'react';
-import { Wrench, Plus, Pencil, Save, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Wrench, Plus, Pencil, Save, CheckCircle2, AlertCircle, Loader2, Search, X } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { SchemaPreview } from './SchemaPreview';
-import { TOOL_CATEGORIES, getToolCategory } from '../../constants/categories';
-import { TABLES } from '../../api/config';
+import { TOOL_CATEGORIES, OTHER_CATEGORY, getToolCategory, getToolInfo } from '../../constants/categories';
+import { adminApi } from '../../api/adminApi';
 import { useT } from '../../i18n/lang';
+
+// Toggle switch row: visible switch + tool-style code tag (e.g. `extras = true`) + helper text
+function ToggleRow({ checked, onChange, title, code, hint }) {
+    return (
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+            <span className="relative mt-0.5 shrink-0 w-9 h-5">
+                <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={e => onChange(e.target.checked)}
+                    className="peer sr-only"
+                />
+                <span className="absolute inset-0 rounded-full bg-slate-700 transition-colors peer-checked:bg-amber-400 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-400/50" />
+                <span className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+            </span>
+            <span className="min-w-0">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-xs font-bold text-white">{title}</span>
+                    <code className="text-[10px] font-mono text-amber-300 bg-amber-400/10 border border-amber-400/20 px-1.5 py-px rounded">
+                        {code}
+                    </code>
+                </span>
+                <span className="block text-[11px] text-slate-400 mt-0.5 leading-relaxed">{hint}</span>
+            </span>
+        </label>
+    );
+}
+
+// Shows the selected tool: its icon, category, status and what it does.
+function ToolInfoCard({ tool }) {
+    const { Icon, desc, category } = getToolInfo(tool.task_type);
+    const enabled = tool.enabled !== false;
+    return (
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-[#0f0f0f] border border-slate-800">
+            <span className="shrink-0 w-11 h-11 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-300 flex items-center justify-center">
+                <Icon className="w-5 h-5" />
+            </span>
+            <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-extrabold text-white truncate">{tool.label}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        {category.icon} {category.label}
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${enabled ? 'bg-emerald-400/10 text-emerald-300 border-emerald-400/30' : 'bg-rose-400/10 text-rose-300 border-rose-400/30'}`}>
+                        {enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                </div>
+                <p className="text-xs text-slate-300">{tool.hint || desc || 'Is tool ka description abhi nahi hai.'}</p>
+                <p className="text-[10px] font-mono text-slate-500 truncate">{tool.task_type}</p>
+            </div>
+        </div>
+    );
+}
 
 export function ToolBuilder() {
     const { sb, catalog, prompts, loadCatalog, loadConfig, setMsg } = useAdmin();
@@ -37,6 +90,40 @@ export function ToolBuilder() {
 
     const [saving, setSaving] = useState(false);
     const [savedMsg, setSavedMsg] = useState('');
+    const [toolQuery, setToolQuery] = useState('');
+
+    const catLabel = (id) => TOOL_CATEGORIES.find(c => c.id === id)?.label || id;
+
+    // Searchable tool list for edit mode: matches label, slug, hint and category, all words must match
+    const filteredTools = useMemo(() => {
+        const terms = toolQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        return [...catalog]
+            .sort((a, b) => (a.label || '').localeCompare(b.label || ''))
+            .filter(c => {
+                if (!terms.length) return true;
+                const hay = [
+                    c.label, c.customer_label, c.task_type, c.hint,
+                    catLabel(getToolCategory(c.task_type))
+                ].filter(Boolean).join(' ').toLowerCase();
+                return terms.every(term => hay.includes(term));
+            });
+    }, [catalog, toolQuery]);
+
+    // Edit list grouped by category, in TOOL_CATEGORIES order (unknown slugs go to "Other")
+    const groupedTools = useMemo(() => {
+        const groups = TOOL_CATEGORIES.filter(c => c.id !== 'all').map(cat => ({ cat, items: [] }));
+        const other = { cat: OTHER_CATEGORY, items: [] };
+        filteredTools.forEach(t => {
+            const group = groups.find(g => g.cat.id === getToolCategory(t.task_type)) || other;
+            group.items.push(t);
+        });
+        return [...groups, other].filter(g => g.items.length > 0);
+    }, [filteredTools]);
+
+    const selectedTool = useMemo(
+        () => catalog.find(c => c.task_type === builderForm.selectedExisting) || null,
+        [catalog, builderForm.selectedExisting]
+    );
 
     const handleSelectExisting = (taskType) => {
         const item = catalog.find(c => c.task_type === taskType);
@@ -121,11 +208,13 @@ export function ToolBuilder() {
             };
 
             if (isExisting) {
-                await sb.from(TABLES.CATALOG).update(catalogRow).eq('task_type', taskType);
+                const { error } = await adminApi.updateCatalogItem(taskType, catalogRow);
+                if (error) throw new Error(error.message);
             } else {
                 const maxSort = catalog.reduce((max, c) => Math.max(max, c.sort || 0), 0);
                 catalogRow.sort = maxSort + 1;
-                await sb.from(TABLES.CATALOG).insert(catalogRow);
+                const { error } = await adminApi.createCatalogItem(catalogRow);
+                if (error) throw new Error(error.message);
             }
 
             // 2. Save Prompt row
@@ -139,26 +228,21 @@ export function ToolBuilder() {
             };
 
             const hasPrompt = !!prompts[taskType];
-            if (hasPrompt) {
-                await sb.from(TABLES.PROMPTS).update(promptRow).eq('task_type', taskType);
-            } else {
-                await sb.from(TABLES.PROMPTS).insert(promptRow);
-            }
+            const { error: promptErr } = hasPrompt
+                ? await adminApi.updatePrompt(taskType, promptRow)
+                : await adminApi.createPrompt(promptRow);
+            if (promptErr) throw new Error(promptErr.message);
 
             // 3. Save Tool Types mapping
             const toolRow = {
                 task_type: taskType,
                 tool: builderForm.output === 'image' ? 'image' : 'chat'
             };
-            try {
-                await sb.from(TABLES.TOOL_TYPES).insert(toolRow);
-            } catch { }
+            await adminApi.setToolType(taskType, toolRow.tool);
 
             // 4. Link with default WearGen app
             if (!isExisting) {
-                try {
-                    await sb.from(TABLES.APP_TASKS).insert({ app_id: 'weargen', task_type: taskType });
-                } catch { }
+                await adminApi.linkAppTasks('weargen', taskType);
             }
 
             await loadCatalog();
@@ -175,7 +259,7 @@ export function ToolBuilder() {
     return (
         <div className="space-y-6">
             {/* Header Banner */}
-            <div className="bg-[#0e1320] border border-slate-800/80 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+            <div className="bg-[#161616] border border-slate-800/80 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 shadow-xl">
                 <div>
                     <h2 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
                         <Wrench className="w-5 h-5 text-amber-400" />
@@ -187,11 +271,11 @@ export function ToolBuilder() {
                 </div>
 
                 {/* Mode Selector */}
-                <div className="flex items-center gap-1.5 bg-[#080b12] p-1 rounded-xl border border-slate-800">
+                <div className="flex items-center gap-1.5 bg-[#0f0f0f] p-1 rounded-xl border border-slate-800">
                     <button
                         type="button"
                         onClick={() => setBuilderForm(prev => ({ ...prev, mode: 'new', selectedExisting: '', task_type: '', label: '', hint: '' }))}
-                        className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                        className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all ${
                             builderForm.mode === 'new' ? 'bg-amber-400 text-slate-950 font-extrabold shadow-sm' : 'text-slate-400 hover:text-white'
                         }`}
                     >
@@ -201,7 +285,7 @@ export function ToolBuilder() {
                     <button
                         type="button"
                         onClick={() => setBuilderForm(prev => ({ ...prev, mode: 'edit' }))}
-                        className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                        className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all ${
                             builderForm.mode === 'edit' ? 'bg-amber-400 text-slate-950 font-extrabold shadow-sm' : 'text-slate-400 hover:text-white'
                         }`}
                     >
@@ -214,25 +298,93 @@ export function ToolBuilder() {
             {/* Main Builder Grid: Left Editor (7 Cols) + Right Schema Preview (5 Cols) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 {/* LEFT COLUMN: Tool Configuration Form */}
-                <div className="lg:col-span-7 bg-[#0e1320] border border-slate-800/80 rounded-2xl p-5 space-y-5 shadow-xl">
+                <div className="lg:col-span-7 bg-[#161616] border border-slate-800/80 rounded-2xl p-5 space-y-5 shadow-xl">
                     {/* Existing Tool Selector if in Edit Mode */}
                     {builderForm.mode === 'edit' && (
-                        <div className="space-y-1.5 bg-amber-400/5 border border-amber-400/20 p-3 rounded-xl">
-                            <label className="text-xs font-bold text-amber-300">Choose Existing Tool to Modify:</label>
-                            <select
-                                value={builderForm.selectedExisting}
-                                onChange={e => handleSelectExisting(e.target.value)}
-                                className="w-full h-9 bg-[#080b12] border border-amber-400/30 rounded-xl px-3 text-xs text-white font-mono focus:outline-none focus:border-amber-400"
-                            >
-                                <option value="">-- Choose from {catalog.length} existing tools --</option>
-                                {catalog.map(c => (
-                                    <option key={c.task_type} value={c.task_type}>
-                                        {c.label} ({c.task_type})
-                                    </option>
+                        <div className="space-y-2.5 bg-amber-400/5 border border-amber-400/20 p-3 rounded-xl">
+                            <div className="flex items-center justify-between gap-2">
+                                <label className="text-xs font-bold text-amber-300">Choose existing tool to modify</label>
+                                <span className="text-[10px] font-mono text-slate-400 whitespace-nowrap">
+                                    {filteredTools.length} / {catalog.length}
+                                </span>
+                            </div>
+
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                                <input
+                                    type="search"
+                                    value={toolQuery}
+                                    onChange={e => setToolQuery(e.target.value)}
+                                    placeholder="Search by name, slug, category or hint..."
+                                    className="w-full h-9 bg-[#0f0f0f] border border-amber-400/30 rounded-xl pl-9 pr-9 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400 [&::-webkit-search-cancel-button]:hidden"
+                                />
+                                {toolQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setToolQuery('')}
+                                        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center"
+                                        aria-label="Clear search"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="max-h-72 overflow-y-auto pr-1 space-y-1">
+                                {filteredTools.length === 0 ? (
+                                    <p className="text-xs text-slate-500 text-center py-6">
+                                        No tool matches "{toolQuery}"
+                                    </p>
+                                ) : groupedTools.map(({ cat, items }) => (
+                                    <div key={cat.id} className="space-y-1">
+                                        <div className="sticky top-0 z-10 flex items-center gap-2 px-1 py-1.5 bg-[#161616]">
+                                            <cat.Icon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                            <span className="text-[11px] font-extrabold uppercase tracking-wide text-amber-300 truncate">{cat.label}</span>
+                                            <span className="text-[10px] font-mono text-slate-500">{items.length}</span>
+                                            <span className="hidden md:inline text-[10px] text-slate-500 truncate">{cat.desc}</span>
+                                        </div>
+                                        {items.map(c => {
+                                            const active = builderForm.selectedExisting === c.task_type;
+                                            const enabled = c.enabled !== false;
+                                            const { Icon, desc } = getToolInfo(c.task_type);
+                                            return (
+                                                <button
+                                                    key={c.task_type}
+                                                    type="button"
+                                                    onClick={() => handleSelectExisting(c.task_type)}
+                                                    className={`w-full text-left px-2.5 py-2 rounded-lg border flex items-center gap-3 transition-colors ${
+                                                        active
+                                                            ? 'bg-amber-400/15 border-amber-400/50'
+                                                            : 'bg-[#0f0f0f] border-slate-800 hover:border-slate-600 hover:bg-slate-900'
+                                                    }`}
+                                                >
+                                                    <span className={`shrink-0 w-8 h-8 rounded-lg border flex items-center justify-center ${
+                                                        active ? 'bg-amber-400/20 border-amber-400/50 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-300'
+                                                    }`}>
+                                                        <Icon className="w-4 h-4" />
+                                                    </span>
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className={`block text-xs font-bold truncate ${active ? 'text-amber-300' : 'text-white'}`}>
+                                                            {c.label}
+                                                        </span>
+                                                        <span className="block text-[10px] text-slate-400 truncate">
+                                                            {c.hint || desc || c.task_type}
+                                                        </span>
+                                                    </span>
+                                                    <span
+                                                        className={`shrink-0 w-2 h-2 rounded-full ${enabled ? 'bg-emerald-400' : 'bg-rose-400'}`}
+                                                        title={enabled ? 'Enabled' : 'Disabled'}
+                                                    />
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 ))}
-                            </select>
+                            </div>
                         </div>
                     )}
+
+                    {builderForm.mode === 'edit' && selectedTool && <ToolInfoCard tool={selectedTool} />}
 
                     {/* Section 1: Basic Identifiers */}
                     <div className="space-y-3.5">
@@ -251,7 +403,7 @@ export function ToolBuilder() {
                                     onChange={e => setBuilderForm({ ...builderForm, task_type: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })}
                                     placeholder="e.g. bridal_saree_studio"
                                     disabled={builderForm.mode === 'edit'}
-                                    className="w-full h-9 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-amber-400 disabled:opacity-50"
+                                    className="w-full h-9 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-amber-400 disabled:opacity-50"
                                 />
                             </div>
 
@@ -264,7 +416,7 @@ export function ToolBuilder() {
                                     value={builderForm.label}
                                     onChange={e => setBuilderForm({ ...builderForm, label: e.target.value })}
                                     placeholder="e.g. Bridal Saree Studio"
-                                    className="w-full h-9 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                                    className="w-full h-9 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
                                 />
                             </div>
                         </div>
@@ -278,7 +430,7 @@ export function ToolBuilder() {
                                 onChange={e => setBuilderForm({ ...builderForm, hint: e.target.value })}
                                 rows={2}
                                 placeholder="Short explanation of what this tool does..."
-                                className="w-full bg-[#080b12] border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                                className="w-full bg-[#0f0f0f] border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
                             />
                         </div>
 
@@ -288,7 +440,7 @@ export function ToolBuilder() {
                                 <select
                                     value={builderForm.output}
                                     onChange={e => setBuilderForm({ ...builderForm, output: e.target.value })}
-                                    className="w-full h-9 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white focus:outline-none focus:border-amber-400"
+                                    className="w-full h-9 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white focus:outline-none focus:border-amber-400"
                                 >
                                     <option value="image">Image (Generates Visual Photo)</option>
                                     <option value="text">Text (Vision/Chat/Tagging)</option>
@@ -300,7 +452,7 @@ export function ToolBuilder() {
                                 <select
                                     value={builderForm.category}
                                     onChange={e => setBuilderForm({ ...builderForm, category: e.target.value })}
-                                    className="w-full h-9 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white focus:outline-none focus:border-amber-400"
+                                    className="w-full h-9 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white focus:outline-none focus:border-amber-400"
                                 >
                                     {TOOL_CATEGORIES.filter(c => c.id !== 'all').map(cat => (
                                         <option key={cat.id} value={cat.id}>{cat.icon} {cat.label}</option>
@@ -318,7 +470,7 @@ export function ToolBuilder() {
 
                         <div className="space-y-2">
                             {/* Face slot */}
-                            <div className="p-3 bg-[#080b12] border border-slate-800 rounded-xl space-y-2">
+                            <div className="p-3 bg-[#0f0f0f] border border-slate-800 rounded-xl space-y-2">
                                 <label className="flex items-center gap-2 text-xs text-slate-200 font-bold cursor-pointer">
                                     <input
                                         type="checkbox"
@@ -340,7 +492,7 @@ export function ToolBuilder() {
                             </div>
 
                             {/* Style slot */}
-                            <div className="p-3 bg-[#080b12] border border-slate-800 rounded-xl space-y-2">
+                            <div className="p-3 bg-[#0f0f0f] border border-slate-800 rounded-xl space-y-2">
                                 <label className="flex items-center gap-2 text-xs text-slate-200 font-bold cursor-pointer">
                                     <input
                                         type="checkbox"
@@ -362,7 +514,7 @@ export function ToolBuilder() {
                             </div>
 
                             {/* Input photo slot */}
-                            <div className="p-3 bg-[#080b12] border border-slate-800 rounded-xl space-y-2">
+                            <div className="p-3 bg-[#0f0f0f] border border-slate-800 rounded-xl space-y-2">
                                 <label className="flex items-center gap-2 text-xs text-slate-200 font-bold cursor-pointer">
                                     <input
                                         type="checkbox"
@@ -383,27 +535,26 @@ export function ToolBuilder() {
                                 )}
                             </div>
 
-                            {/* Multiple 1-50 Batch Extras */}
-                            <div className="p-3 bg-[#080b12] border border-amber-400/25 rounded-xl space-y-2">
-                                <label className="flex items-center gap-2 text-xs text-amber-300 font-bold cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={builderForm.hasExtras}
-                                        onChange={e => setBuilderForm({ ...builderForm, hasExtras: e.target.checked })}
-                                        className="rounded border-slate-700 text-amber-400 focus:ring-amber-400"
-                                    />
-                                    <span>Allow 1 to 50 Photos Multi-Upload (`extras = true`)</span>
-                                </label>
+                            {/* Multi-upload options (1-50 photos batch) */}
+                            <div className="p-3.5 bg-[#0f0f0f] border border-amber-400/25 rounded-xl space-y-3.5">
+                                <ToggleRow
+                                    checked={builderForm.hasExtras}
+                                    onChange={v => setBuilderForm({ ...builderForm, hasExtras: v, perPhoto: v ? builderForm.perPhoto : false })}
+                                    title="Allow 1 to 50 Photos Multi-Upload"
+                                    code="extras = true"
+                                    hint="Customer can upload 1 to 50 photos in one go."
+                                />
+
                                 {builderForm.hasExtras && (
-                                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pl-6">
-                                        <input
-                                            type="checkbox"
+                                    <div className="ml-4 pl-4 border-l-2 border-amber-400/30">
+                                        <ToggleRow
                                             checked={builderForm.perPhoto}
-                                            onChange={e => setBuilderForm({ ...builderForm, perPhoto: e.target.checked })}
-                                            className="rounded border-slate-700 text-amber-400"
+                                            onChange={v => setBuilderForm({ ...builderForm, perPhoto: v })}
+                                            title="One result per uploaded photo"
+                                            code="per_photo = true"
+                                            hint="Each uploaded photo gets its own generated result."
                                         />
-                                        <span>One result per uploaded photo (`per_photo = true`)</span>
-                                    </label>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -422,7 +573,7 @@ export function ToolBuilder() {
                                     value={builderForm.system_text}
                                     onChange={e => setBuilderForm({ ...builderForm, system_text: e.target.value })}
                                     rows={2}
-                                    className="w-full bg-[#080b12] border border-slate-700 rounded-xl p-2.5 text-xs text-white"
+                                    className="w-full bg-[#0f0f0f] border border-slate-700 rounded-xl p-2.5 text-xs text-white"
                                 />
                             </div>
 
@@ -432,7 +583,7 @@ export function ToolBuilder() {
                                     value={builderForm.role_text}
                                     onChange={e => setBuilderForm({ ...builderForm, role_text: e.target.value })}
                                     rows={3}
-                                    className="w-full bg-[#080b12] border border-slate-700 rounded-xl p-2.5 text-xs text-white"
+                                    className="w-full bg-[#0f0f0f] border border-slate-700 rounded-xl p-2.5 text-xs text-white"
                                 />
                             </div>
 
@@ -442,7 +593,7 @@ export function ToolBuilder() {
                                     value={builderForm.negative_text}
                                     onChange={e => setBuilderForm({ ...builderForm, negative_text: e.target.value })}
                                     rows={2}
-                                    className="w-full bg-[#080b12] border border-slate-700 rounded-xl p-2.5 text-xs text-white"
+                                    className="w-full bg-[#0f0f0f] border border-slate-700 rounded-xl p-2.5 text-xs text-white"
                                 />
                             </div>
                         </div>

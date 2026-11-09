@@ -47,7 +47,7 @@ export function BatchUploader({ type, form, setForm, onSetMsg }) {
     };
 
     return (
-        <div className="space-y-2 bg-[#080b12] border border-amber-400/25 p-3 sm:p-4 rounded-xl">
+        <div className="space-y-2 bg-[#0f0f0f] border border-amber-400/25 p-3 sm:p-4 rounded-xl">
             {/* Header & Badges */}
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">

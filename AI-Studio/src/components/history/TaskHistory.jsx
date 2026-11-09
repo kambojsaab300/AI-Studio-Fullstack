@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, RefreshCw, Eye, Image as ImageIcon, MessageSquare, Database, Terminal } from 'lucide-react';
+import { Search, RefreshCw, Eye, Image as ImageIcon, MessageSquare, Database, Terminal, Trash2, Square, AlertOctagon } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { StatusBadge } from '../common/StatusBadge';
 import { TaskModal } from './TaskModal';
 import { formatDuration, timeAgo } from '../../utils/formatters';
-import { TABLES } from '../../api/config';
+import { adminApi } from '../../api/adminApi';
 import { useT } from '../../i18n/lang';
 
 const PAGE_SIZE = 10;
 
-export function TaskHistory() {
+// appId: show only this app's tasks (App workspace). title / subtitle: optional heading text.
+export function TaskHistory({ appId, title, subtitle } = {}) {
     const { sb, isAdmin, liveTasks } = useAdmin();
     const t = useT();
     const [tab, setTab] = useState('pending');
@@ -26,11 +27,8 @@ export function TaskHistory() {
         try {
             const start = currentPage * PAGE_SIZE;
             // Full Column Projection: Fetch all columns including output_text, output_image_urls, user_id, app_id
-            const res = await sb.from(TABLES.TASKS)
-                .select('id,task_type,model,prompt,aspect_ratio,image_size,status,error,output_text,output_image_url,output_image_urls,input_image_url,face_image_url,style_image_url,worker_id,app_id,user_id,batch_count,conversation_id,face_match_score,created_at,finished_at,duration_ms,process_ms', { count: 'exact' })
-                .eq('status', currentTab)
-                .order('id', { ascending: false })
-                .range(start, start + PAGE_SIZE - 1);
+            const res = await adminApi.listTasks({ status: currentTab, appId, limit: PAGE_SIZE, offset: start });
+            if (res.error) console.warn('loadTasksForTab error:', res.error.message);
 
             if (res.data) setRows(res.data);
             if (res.count != null) {
@@ -41,7 +39,7 @@ export function TaskHistory() {
         } finally {
             setLoading(false);
         }
-    }, [sb, isAdmin]);
+    }, [sb, isAdmin, appId]);
 
     useEffect(() => {
         loadTasksForTab(tab, page);
@@ -50,6 +48,39 @@ export function TaskHistory() {
     const handleTabChange = (newTab) => {
         setTab(newTab);
         setPage(0);
+    };
+
+    const handleDeleteTask = async (task) => {
+        if (!window.confirm(`Delete Task #${task.id} permanently from database?`)) return;
+        try {
+            const { error } = await adminApi.deleteTask(task.id);
+            if (error) throw new Error(error.message);
+            setRows(r => r.filter(x => x.id !== task.id));
+            setCounts(c => ({ ...c, [tab]: Math.max(0, (c[tab] || 1) - 1) }));
+        } catch (err) {
+            alert('Failed to delete task: ' + err.message);
+        }
+    };
+
+    const handleStopTask = async (task) => {
+        try {
+            const { error } = await adminApi.stopTask(task.id);
+            if (error) throw new Error(error.message);
+            setRows(r => r.map(x => x.id === task.id ? { ...x, status: 'failed', error: 'Stopped by admin' } : x));
+        } catch (err) {
+            alert('Failed to stop task: ' + err.message);
+        }
+    };
+
+    const handleClearAllFailed = async () => {
+        if (!window.confirm('Kya aap saare failed / timeout tasks ko database se permanently delete karna chahte hain?')) return;
+        try {
+            const { error } = await adminApi.clearFailed();
+            if (error) throw new Error(error.message);
+            loadTasksForTab(tab, 0);
+        } catch (err) {
+            alert('Clear failed error: ' + err.message);
+        }
     };
 
     // Filter rows by live search query
@@ -66,12 +97,12 @@ export function TaskHistory() {
     const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
     return (
-        <section className="bg-[#0b0e17] border border-white/[0.08] rounded-3xl p-4 sm:p-6 space-y-4 shadow-2xl">
+        <section className="bg-[#121212] border border-white/[0.08] rounded-3xl p-4 sm:p-6 space-y-4 shadow-2xl">
             {/* Top Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h2 className="text-sm sm:text-base font-extrabold text-white">Tasks & Results Database History</h2>
-                    <p className="text-xs text-stone-400">Search and audit all completed, processing, and pending fleet tasks</p>
+                    <h2 className="text-sm sm:text-base font-extrabold text-white">{title || 'Tasks & Results Database History'}</h2>
+                    <p className="text-xs text-stone-400">{subtitle || 'Search and audit all completed, processing, and pending fleet tasks'}</p>
                 </div>
 
                 {/* Status Tabs */}
@@ -106,6 +137,18 @@ export function TaskHistory() {
                             </button>
                         );
                     })}
+
+                    {tab === 'failed' && (
+                        <button
+                            type="button"
+                            onClick={handleClearAllFailed}
+                            className="h-8 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                            title="Delete all failed tasks from database"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Clear All Failed</span>
+                        </button>
+                    )}
 
                     <button
                         type="button"
@@ -142,7 +185,7 @@ export function TaskHistory() {
                             <th className="p-3">Score</th>
                             <th className="p-3">Duration</th>
                             <th className="p-3">Status</th>
-                            <th className="p-3 text-right">Inspect</th>
+                            <th className="p-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -193,15 +236,37 @@ export function TaskHistory() {
                                         <StatusBadge status={r.status} />
                                     </td>
                                     <td className="p-3 text-right">
-                                        <button
-                                            type="button"
-                                            onClick={() => setSelectedTask(r)}
-                                            className="h-7 px-2.5 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 hover:text-amber-200 text-xs font-bold inline-flex items-center gap-1 border border-amber-400/20 transition-colors"
-                                            title="Inspect payload, table source & JSON"
-                                        >
-                                            <Terminal className="w-3 h-3" />
-                                            <span>JSON</span>
-                                        </button>
+                                        <div className="flex items-center justify-end gap-1.5">
+                                            {(r.status === 'pending' || r.status === 'processing') && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleStopTask(r)}
+                                                    className="h-7 px-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold inline-flex items-center gap-1 border border-amber-500/20 transition-colors"
+                                                    title="Stop this task"
+                                                >
+                                                    <Square className="w-2.5 h-2.5 fill-current" />
+                                                    <span>Stop</span>
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteTask(r)}
+                                                className="h-7 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold inline-flex items-center gap-1 border border-rose-500/20 transition-colors"
+                                                title="Permanently delete from database"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                                <span>Delete</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedTask(r)}
+                                                className="h-7 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-stone-300 hover:text-white text-xs font-bold inline-flex items-center gap-1 border border-white/10 transition-colors"
+                                                title="Inspect payload, table source & JSON"
+                                            >
+                                                <Terminal className="w-3 h-3" />
+                                                <span>JSON</span>
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))

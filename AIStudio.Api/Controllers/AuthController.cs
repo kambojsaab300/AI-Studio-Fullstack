@@ -8,6 +8,7 @@ using AIStudio.Api.Models;
 using AIStudio.Api.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 
@@ -30,6 +31,7 @@ namespace AIStudio.Api.Controllers
         {
             public string Email { get; set; } = string.Empty;
             public string Password { get; set; } = string.Empty;
+            public string? AppId { get; set; }   // customer portal: the app this login works for
         }
 
         public class SignupRequest
@@ -37,6 +39,7 @@ namespace AIStudio.Api.Controllers
             public string Email { get; set; } = string.Empty;
             public string Password { get; set; } = string.Empty;
             public string Role { get; set; } = "customer"; // "customer", "app", or "admin"
+            public string? AppId { get; set; }
         }
 
         [HttpPost("login")]
@@ -45,13 +48,16 @@ namespace AIStudio.Api.Controllers
             if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
                 return BadRequest(new { error = "Email aur password dono zaroori hain." });
 
+            if (!string.IsNullOrWhiteSpace(req.AppId) && !await _db.IsAppEnabledAsync(req.AppId.Trim()))
+                return BadRequest(new { error = "App nahi mili ya band hai." });
+
             var user = await _db.AuthenticateUserAsync(req.Email, req.Password);
             if (user == null)
                 return Unauthorized(new { error = "Email ya password galat hai." });
 
             bool isAdmin = user.Role == "admin" || await _db.IsAdminAsync(user.Id);
             string effectiveRole = isAdmin ? "admin" : (string.IsNullOrWhiteSpace(user.Role) ? "customer" : user.Role);
-            string token = GenerateJwtToken(user, isAdmin);
+            string token = GenerateJwtToken(user, isAdmin, string.IsNullOrWhiteSpace(req.AppId) ? null : req.AppId.Trim());
 
             // Set secure HttpOnly cookie for automatic browser persistence across refreshes
             var cookieOptions = new CookieOptions
@@ -108,13 +114,8 @@ namespace AIStudio.Api.Controllers
             if (string.IsNullOrWhiteSpace(tokenStr))
                 return Unauthorized(new { error = "Not authenticated" });
 
-            var handler = new JwtSecurityTokenHandler();
-            if (!handler.CanReadToken(tokenStr))
-                return Unauthorized(new { error = "Invalid token format" });
-
-            var jwt = handler.ReadJwtToken(tokenStr);
-            if (jwt.ValidTo < DateTime.UtcNow)
-                return Unauthorized(new { error = "Token has expired" });
+            if (!AdminTokenValidator.TryGetVerifiedToken(Request, _config, out var jwt) || jwt == null)
+                return Unauthorized(new { error = "Invalid or expired token" });
 
             var userId = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "sub")?.Value;
             var email = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email || c.Type == "email")?.Value ?? "";
@@ -147,10 +148,18 @@ namespace AIStudio.Api.Controllers
 
             try
             {
+                // Public signup can never create an admin. Admins are granted server-side only.
                 string desiredRole = string.IsNullOrWhiteSpace(req.Role) ? "customer" : req.Role.Trim().ToLowerInvariant();
+                if (desiredRole != "customer" && desiredRole != "app")
+                    return StatusCode(403, new { error = "Is role se account nahi ban sakta." });
+
+                string? signupApp = string.IsNullOrWhiteSpace(req.AppId) ? null : req.AppId.Trim();
+                if (signupApp is not null && !await _db.IsAppEnabledAsync(signupApp))
+                    return BadRequest(new { error = "App nahi mili ya band hai." });
+
                 var user = await _db.RegisterUserAsync(req.Email, req.Password, desiredRole);
-                bool isAdmin = desiredRole == "admin";
-                string token = GenerateJwtToken(user, isAdmin);
+                bool isAdmin = false;
+                string token = GenerateJwtToken(user, isAdmin, signupApp);
 
                 Response.Cookies.Append("aistudio_jwt", token, new CookieOptions
                 {
@@ -174,9 +183,15 @@ namespace AIStudio.Api.Controllers
                     }
                 });
             }
+            catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+            {
+                // Unique key on email: the account already exists. Don't echo the SQL text to the user.
+                return Conflict(new { error = "Is email se account pehle se bana hua hai. Login karo." });
+            }
             catch (Exception ex)
             {
-                return BadRequest(new { error = "Account nahi ban saka: " + ex.Message });
+                Console.Error.WriteLine($"Signup failed: {ex}");
+                return StatusCode(500, new { error = "Account abhi nahi ban saka. Thodi der baad try karo." });
             }
         }
 
@@ -185,30 +200,10 @@ namespace AIStudio.Api.Controllers
         {
             if (string.IsNullOrWhiteSpace(userId))
             {
-                string? tokenStr = null;
-                var authHeader = Request.Headers["Authorization"].ToString();
-                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                if (AdminTokenValidator.TryGetVerifiedUser(Request, _config, out var verifiedId, out bool tokenIsAdmin))
                 {
-                    tokenStr = authHeader.Substring("Bearer ".Length).Trim();
-                }
-                else if (Request.Cookies.TryGetValue("aistudio_jwt", out var cToken) && !string.IsNullOrEmpty(cToken))
-                {
-                    tokenStr = cToken;
-                }
-
-                if (!string.IsNullOrEmpty(tokenStr))
-                {
-                    var handler = new JwtSecurityTokenHandler();
-                    if (handler.CanReadToken(tokenStr))
-                    {
-                        var jwt = handler.ReadJwtToken(tokenStr);
-                        var adminClaim = jwt.Claims.FirstOrDefault(c => c.Type == "is_admin" || c.Type == ClaimTypes.Role);
-                        if (adminClaim != null && (adminClaim.Value.Equals("true", StringComparison.OrdinalIgnoreCase) || adminClaim.Value.Equals("admin", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            return Ok(new { is_admin = true });
-                        }
-                        userId = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "sub")?.Value;
-                    }
+                    if (tokenIsAdmin) return Ok(new { is_admin = true });
+                    userId = verifiedId;
                 }
             }
 
@@ -219,7 +214,7 @@ namespace AIStudio.Api.Controllers
             return Ok(new { is_admin = isAdmin });
         }
 
-        private string GenerateJwtToken(User user, bool isAdmin)
+        private string GenerateJwtToken(User user, bool isAdmin, string? appId = null)
         {
             var secret = _config["Jwt:Secret"] ?? "AIStudioSuperSecretSecurityKey20261102!#*9988";
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
@@ -233,6 +228,7 @@ namespace AIStudio.Api.Controllers
                 new Claim(ClaimTypes.Role, effectiveRole),
                 new Claim("is_admin", isAdmin ? "true" : "false")
             };
+            if (!string.IsNullOrEmpty(appId)) claims = claims.Append(new Claim("app_id", appId)).ToArray();
 
             var token = new JwtSecurityToken(
                 issuer: _config["Jwt:Issuer"] ?? "AIStudioBackend",

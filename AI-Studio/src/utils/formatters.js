@@ -45,3 +45,6 @@ export function timeAgo(isoString) {
         return isoString;
     }
 }
+
+// Tool labels saved without unicode lost their arrows ("Photo Read ? Text"). Show "→" again.
+export const cleanToolLabel = (label) => String(label || '').replace(/\s\?\s/g, ' → ');

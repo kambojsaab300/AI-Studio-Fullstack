@@ -1,278 +1,175 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Security.Claims;
 using System.Text.Json;
-using System.Threading.Tasks;
-using AIStudio.Api.Models;
+using AIStudio.Api.Data;
+using AIStudio.Api.Security;
 using AIStudio.Api.Services;
+using AIStudio.Api.Storage;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
-namespace AIStudio.Api.Controllers
+namespace AIStudio.Api.Controllers;
+
+public sealed record WorkerRegisterRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("wanted")] string? Wanted,
+    [property: System.Text.Json.Serialization.JsonPropertyName("p_wanted")] string? PWanted);
+
+/// <summary>
+/// Worker endpoints (C9, H3, H4, C10):
+/// - auth: per-worker token + IP allowlist (SQL me)
+/// - claim: ek task, lease + budget SQL me; prompts sirf yahan
+/// - inputs: worker ko image sirf valid lease pe, API se stream (Cloudinary URL / secret worker ke paas nahi)
+/// - complete: worker image BYTES bhejta hai; upload API karta hai; worker koi URL nahi bhej sakta
+/// Purane /pending, /config, /budget-take routes LegacyEndpointBlocker band karta hai.
+/// </summary>
+[ApiController, Route("api/worker"), Authorize(AuthenticationSchemes = AuthSchemes.Worker)]
+[EnableRateLimiting("worker")]
+public sealed class WorkerController(AiStudioDb db, CloudinaryStorage storage, ImageUrlGuard urlGuard,
+    TenantWebhookNotifier webhooks) : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class WorkerController : ControllerBase
+    private string WorkerId => User.FindFirstValue("worker_id")!;
+    private string Ip => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+
+    /// <summary>
+    /// Browser worker enrollment. Header X-Api-Key = worker enrollment key (optional, enforced by Security:Enforce).
+    /// Body: { "wanted": "worker_3" } (optional). Returns worker_id + worker_token (send as "Authorization: Worker &lt;token&gt;").
+    /// </summary>
+    [HttpPost("register"), AllowAnonymous]
+    public async Task<IActionResult> Register([FromBody] WorkerRegisterRequest? body, [FromServices] WorkerAuthService auth)
     {
-        private readonly DatabaseService _db;
-
-        public WorkerController(DatabaseService db)
-        {
-            _db = db;
-        }
-
-        [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] JsonElement body)
-        {
-            string? wanted = body.TryGetProperty("p_wanted", out var w) ? w.GetString() : null;
-            if (string.IsNullOrWhiteSpace(wanted) && body.TryGetProperty("wanted", out var w2))
-                wanted = w2.GetString();
-
-            string workerId = await _db.RegisterWorkerAsync(wanted);
-            return Ok(new { worker_id = workerId });
-        }
-
-        [HttpPost("heartbeat")]
-        public async Task<IActionResult> Heartbeat([FromBody] JsonElement body)
-        {
-            string workerId = (body.TryGetProperty("p_worker_id", out var w) ? w.GetString() : null)
-                ?? (body.TryGetProperty("worker_id", out var w2) ? w2.GetString() : null)
-                ?? string.Empty;
-
-            if (string.IsNullOrWhiteSpace(workerId))
-                return BadRequest(new { error = "Worker ID zaroori hai." });
-
-            var status = await _db.WorkerHeartbeatAsync(workerId);
-            return Ok(new { paused = status.paused, drain = status.drain });
-        }
-
-        [HttpPost("release")]
-        public async Task<IActionResult> Release([FromBody] JsonElement body)
-        {
-            string workerId = (body.TryGetProperty("p_worker_id", out var w) ? w.GetString() : null)
-                ?? (body.TryGetProperty("worker_id", out var w2) ? w2.GetString() : null)
-                ?? string.Empty;
-
-            if (!string.IsNullOrWhiteSpace(workerId))
-                await _db.WorkerReleaseAsync(workerId);
-
-            return Ok(new { success = true });
-        }
-
-        [HttpGet("config")]
-        public async Task<IActionResult> GetConfig([FromQuery] string? workerId)
-        {
-            var s = await _db.GetSettingsAsync();
-            var sec = await _db.GetSecretsAsync();
-            int budgetLeft = await _db.RecordBudgetTakeAsync(workerId ?? "default", 0);
-
-            var models = await _db.GetModelsAsync();
-            var disabledModels = models.Where(m => !m.Enabled).Select(m => m.ModelId).ToArray();
-
-            return Ok(new
-            {
-                task_concurrency = s.TaskConcurrency,
-                gemini_concurrency = s.GeminiConcurrency,
-                photos_per_task_max = s.PhotosPerTaskMax,
-                max_attempts = s.MaxAttempts,
-                retry_delay_sec = s.RetryDelaySec,
-                task_timeout_sec = s.TaskTimeoutSec,
-                budget_left = budgetLeft,
-                disabled_models = disabledModels,
-                cloudinary_enabled = s.CloudinaryEnabled,
-                cloudinary_cloud_name = s.CloudinaryCloudName,
-                cloudinary_upload_preset = s.CloudinaryUploadPreset,
-                imgbb_enabled = s.ImgbbEnabled,
-                imgbb_api_key = sec.ImgbbApiKey,
-                match_model = s.MatchModel,
-                match_threshold = s.MatchThreshold,
-                match_retries = s.MatchRetries,
-                gemini_base = s.GeminiBase,
-                imgbb_upload_url = s.ImgbbUploadUrl,
-                stale_min = s.StaleMin,
-                image_max_side = s.ImageMaxSide,
-                image_quality = s.ImageQuality,
-                heartbeat_sec = s.HeartbeatSec,
-                fallback_sec = s.FallbackSec,
-                worker_recycle_after_tasks = s.WorkerRecycleAfterTasks <= 0 ? 50 : s.WorkerRecycleAfterTasks
-            });
-        }
-
-        [HttpGet("pending")]
-        public async Task<IActionResult> GetPending([FromQuery] string workerId, [FromQuery] int limit = 40)
-        {
-            if (string.IsNullOrWhiteSpace(workerId))
-                return BadRequest(new { error = "Worker ID zaroori hai." });
-
-            var staleBefore = DateTimeOffset.UtcNow.AddMinutes(-10);
-            var tasks = await _db.GetPendingForWorkerAsync(workerId, staleBefore, limit);
-
-            var result = tasks.Select(t => new
-            {
-                id = t.Id,
-                task_type = t.TaskType,
-                model = t.Model,
-                prompt = t.Prompt,
-                system_text = t.SystemText,
-                aspect_ratio = t.AspectRatio,
-                image_size = t.ImageSize,
-                face_image_url = t.FaceImageUrl,
-                style_image_url = t.StyleImageUrl,
-                input_image_url = t.InputImageUrl,
-                extra_image_urls = string.IsNullOrEmpty(t.ExtraImageUrls) ? null : JsonSerializer.Deserialize<string[]>(t.ExtraImageUrls),
-                conversation_id = t.ConversationId,
-                user_id = t.UserId,
-                batch_count = t.BatchCount,
-                tool = t.Tool,
-                app_id = t.AppId,
-                priority = t.Priority,
-                family_role_keys = string.IsNullOrEmpty(t.FamilyRoleKeys) ? null : JsonSerializer.Deserialize<string[]>(t.FamilyRoleKeys),
-                created_at = t.CreatedAt.ToString("o")
-            });
-
-            return Ok(result);
-        }
-
-        [HttpPost("claim")]
-        public async Task<IActionResult> ClaimTask([FromBody] JsonElement body)
-        {
-            long id = (body.TryGetProperty("p_id", out var pid) ? pid.GetInt64() : 0)
-                + (body.TryGetProperty("id", out var tid) ? tid.GetInt64() : 0);
-
-            string workerId = (body.TryGetProperty("p_worker_id", out var pw) ? pw.GetString() : null)
-                ?? (body.TryGetProperty("worker_id", out var w) ? w.GetString() : null)
-                ?? string.Empty;
-
-            if (id <= 0 || string.IsNullOrWhiteSpace(workerId))
-                return BadRequest(new { error = "Task ID aur Worker ID zaroori hain." });
-
-            bool claimed = await _db.ClaimTaskAsync(id, workerId);
-            return Ok(new { success = claimed });
-        }
-
-        [HttpPost("complete")]
-        public async Task<IActionResult> CompleteTask([FromBody] JsonElement body)
-        {
-            long id = (body.TryGetProperty("p_id", out var pid) ? pid.GetInt64() : 0)
-                + (body.TryGetProperty("id", out var tid) ? tid.GetInt64() : 0);
-
-            string workerId = (body.TryGetProperty("p_worker_id", out var pw) ? pw.GetString() : null)
-                ?? (body.TryGetProperty("worker_id", out var w) ? w.GetString() : null)
-                ?? string.Empty;
-
-            JsonElement patch = body.TryGetProperty("p_patch", out var pp) ? pp : body;
-
-            string status = patch.TryGetProperty("status", out var st) ? st.GetString() ?? "done" : "done";
-            string? outputImageUrl = patch.TryGetProperty("output_image_url", out var oiu) ? oiu.GetString() : null;
-            string? outputText = patch.TryGetProperty("output_text", out var ot) ? ot.GetString() : null;
-            string? error = patch.TryGetProperty("error", out var er) ? er.GetString() : null;
-            
-            string? outputImageUrls = null;
-            if (patch.TryGetProperty("output_image_urls", out var oius))
-                outputImageUrls = oius.ToString();
-
-            decimal? matchScore = null;
-            if (patch.TryGetProperty("face_match_score", out var ms) && ms.ValueKind == JsonValueKind.Number)
-                matchScore = ms.GetDecimal();
-
-            int? processMs = null;
-            if (patch.TryGetProperty("process_ms", out var pm) && pm.ValueKind == JsonValueKind.Number)
-                processMs = pm.GetInt32();
-
-            bool completed = await _db.CompleteTaskAsync(id, workerId, status, outputImageUrl, outputImageUrls, outputText, matchScore, error, processMs);
-            return Ok(new { success = completed });
-        }
-
-        [HttpGet("prompts")]
-        public async Task<IActionResult> GetPrompts()
-        {
-            var prompts = await _db.GetPromptsAsync();
-            var dict = prompts.Where(p => p.Enabled).ToDictionary(
-                p => p.TaskType,
-                p => new
-                {
-                    system_text = p.SystemText,
-                    role_text = p.RoleText,
-                    negative_text = p.NegativeText,
-                    prompt_version = p.PromptVersion
-                }
-            );
-            return Ok(dict);
-        }
-
-        [HttpGet("catalog")]
-        public async Task<IActionResult> GetCatalog()
-        {
-            var catalog = await _db.GetCatalogAsync();
-            var dict = catalog.Where(c => c.Enabled).ToDictionary(
-                c => c.TaskType,
-                c => new
-                {
-                    label = c.Label,
-                    output = c.Output,
-                    kind = c.Output,
-                    inputs = string.IsNullOrEmpty(c.Inputs) ? new string[0] : JsonSerializer.Deserialize<string[]>(c.Inputs),
-                    labels = string.IsNullOrEmpty(c.Labels) ? (object)new { } : JsonSerializer.Deserialize<Dictionary<string, string>>(c.Labels),
-                    optional = string.IsNullOrEmpty(c.Optional) ? new string[0] : JsonSerializer.Deserialize<string[]>(c.Optional),
-                    extras = c.Extras,
-                    prompt_required = c.PromptRequired,
-                    face_check = c.FaceCheck,
-                    edit = c.Edit,
-                    transparent = c.Transparent,
-                    angles = string.IsNullOrEmpty(c.Angles) ? null : JsonSerializer.Deserialize<string[]>(c.Angles),
-                    family = c.Family,
-                    per_photo = c.PerPhoto,
-                    tool = c.Tool
-                }
-            );
-            return Ok(dict);
-        }
-
-        [HttpGet("family-roles")]
-        public async Task<IActionResult> GetFamilyRoles()
-        {
-            var roles = await _db.GetFamilyRolesAsync();
-            return Ok(roles.Where(r => r.Enabled).Select(r => new
-            {
-                role_key = r.RoleKey,
-                label_admin = r.LabelAdmin,
-                label_customer = r.LabelCustomer,
-                prompt_text = r.PromptText,
-                sort_order = r.SortOrder
-            }));
-        }
-
-        [HttpPost("auto-pause")]
-        public async Task<IActionResult> AutoPause([FromBody] JsonElement body)
-        {
-            string workerId = (body.TryGetProperty("p_worker_id", out var w) ? w.GetString() : null)
-                ?? (body.TryGetProperty("worker_id", out var w2) ? w2.GetString() : null)
-                ?? string.Empty;
-
-            string reason = (body.TryGetProperty("p_reason", out var r) ? r.GetString() : null)
-                ?? (body.TryGetProperty("reason", out var r2) ? r2.GetString() : null)
-                ?? "Automatic pause";
-
-            if (!string.IsNullOrWhiteSpace(workerId))
-                await _db.AutoPauseWorkerAsync(workerId, reason);
-
-            return Ok(new { success = true });
-        }
-
-        [HttpPost("budget-take")]
-        public async Task<IActionResult> BudgetTake([FromBody] JsonElement body)
-        {
-            string workerId = (body.TryGetProperty("p_worker_id", out var w) ? w.GetString() : null)
-                ?? (body.TryGetProperty("worker_id", out var w2) ? w2.GetString() : null)
-                ?? "default";
-
-            int calls = 1;
-            if (body.TryGetProperty("p_calls", out var c) && c.ValueKind == JsonValueKind.Number)
-                calls = c.GetInt32();
-            else if (body.TryGetProperty("calls", out var c2) && c2.ValueKind == JsonValueKind.Number)
-                calls = c2.GetInt32();
-
-            int budgetLeft = await _db.RecordBudgetTakeAsync(workerId, calls);
-            return Ok(new { budget_left = budgetLeft });
-        }
+        string? wanted = body?.Wanted ?? body?.PWanted;
+        string? key = Request.Headers["X-Api-Key"].ToString();
+        var r = await auth.RegisterAsync(wanted, string.IsNullOrWhiteSpace(key) ? null : key);
+        if (!r.Ok) return StatusCode(r.Status, new { error = r.Error });
+        return Ok(new { worker_id = r.WorkerId, worker_token = r.Token });
     }
+
+    [HttpPost("heartbeat")]
+    public async Task<IActionResult> Heartbeat()
+    {
+        var (paused, drain, blocked) = await db.HeartbeatAsync(WorkerId, Ip);
+        return blocked ? Unauthorized() : Ok(new { paused, drain });
+    }
+
+    [HttpPost("claim")]
+    public async Task<IActionResult> Claim()
+    {
+        var (code, t) = await db.ClaimNextAsync(WorkerId, Ip, leaseSeconds: 300);
+        if (code == 90) return Unauthorized();
+        if (code == 91) return StatusCode(429, new { error = "DAILY_BUDGET_REACHED" });
+        if (code == 70) return StatusCode(503, new { error = "MAINTENANCE" });
+        if (t is null) return NoContent();   // queue khaali
+
+        string Input(string role, int i = 0) => $"/api/worker/tasks/{t.PublicId}/inputs/{role}?lease={t.LeaseId}&i={i}";
+        var extras = t.ExtraPublicIds is null ? 0 : JsonDocument.Parse(t.ExtraPublicIds).RootElement.GetArrayLength();
+
+        return Ok(new
+        {
+            t.PublicId, t.LeaseId, t.LeaseExpiresAt, t.TaskType, t.Model, t.Prompt, t.AspectRatio, t.ImageSize,
+            t.BatchCount, t.FamilyRoleKeys, t.Attempts, t.FaceCheck, t.Edit, t.Transparent,
+            prompts = new { t.SystemText, t.RoleText, t.NegativeText, t.PromptVersion },
+            inputs = new
+            {
+                input = t.InputPublicId is not null ? Input("input") : null,
+                face = t.FacePublicId is not null ? Input("face") : null,
+                style = t.StylePublicId is not null ? Input("style") : null,
+                extra = Enumerable.Range(0, extras).Select(i => Input("extra", i)).ToArray()
+            },
+            // Legacy tasks: worker ye URLs khud fetch na kare; neeche wale legacy endpoint se guard ke through lo
+            legacy = new { t.InputImageUrl, t.FaceImageUrl, t.StyleImageUrl, t.ExtraImageUrls }
+        });
+    }
+
+    [HttpGet("tasks/{publicId:guid}/inputs/{role}")]
+    public async Task<IActionResult> Input(Guid publicId, string role, [FromQuery] Guid lease, [FromQuery] int i, CancellationToken ct)
+    {
+        if (role is not ("input" or "face" or "style" or "extra") || i is < 0 or > 7) return NotFound();
+        var asset = await db.GetWorkerTaskAssetAsync(WorkerId, publicId, lease, role, i);
+        if (asset is null) return NotFound();
+        var stream = await storage.OpenReadByPublicIdAsync(asset.PublicId, asset.ContentType, ct);
+        return stream is null ? NotFound() : File(stream, asset.ContentType);
+    }
+
+    /// <summary>Legacy URL tasks ke liye: SSRF guard ke saath API fetch karta hai.</summary>
+    [HttpPost("legacy-fetch")]
+    public async Task<IActionResult> LegacyFetch([FromBody] LegacyFetchRequest r, CancellationToken ct)
+    {
+        var img = await urlGuard.DownloadAsync(r.Url, ct);
+        if (img is null)
+        {
+            await db.RiskFlagAsync("SSRF_BLOCKED", workerId: WorkerId, detail: r.Url, ip: Ip);
+            return BadRequest(new { error = "URL_NOT_ALLOWED" });
+        }
+        return File(img.Value.Bytes, img.Value.ContentType);
+    }
+
+    public sealed record LegacyFetchRequest(string Url);
+
+    [HttpPost("tasks/{publicId:guid}/complete"), RequestSizeLimit(60 * 1024 * 1024)]
+    public async Task<IActionResult> Complete(Guid publicId, [FromForm] CompleteForm f, CancellationToken ct)
+    {
+        var urls = new List<string>();
+        var uploaded = new List<UploadedImage>();
+        if (f.Success)
+        {
+            // Text tasks (chat) finish with output_text and no images; image tasks need 1..10 images.
+            bool textOnly = !string.IsNullOrWhiteSpace(f.OutputText) && (f.Images is null || f.Images.Count == 0);
+            if (!textOnly && (f.Images is null || f.Images.Count is 0 or > 10)) return BadRequest(new { error = "IMAGES" });
+            foreach (var file in f.Images ?? new List<IFormFile>())
+            {
+                if (file.Length is 0 or > ImageSniffer.MaxBytes) return BadRequest(new { error = "IMAGE_SIZE" });
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms, ct);
+                var bytes = ms.ToArray();
+                if (ImageSniffer.DetectContentType(bytes) is null) return BadRequest(new { error = "IMAGE_TYPE" });
+                var up = await storage.UploadAsync(bytes, "outputs", "output", ct);
+                uploaded.Add(up);
+                urls.Add(up.CanonicalUrl);
+            }
+        }
+
+        var res = await db.CompleteAsync(new CompleteArgs(
+            WorkerId, publicId, f.LeaseId, f.Success, f.Retryable,
+            urls.Count > 0 ? JsonSerializer.Serialize(urls) : null,
+            f.OutputText is { Length: > 20000 } ? f.OutputText[..20000] : f.OutputText,
+            SafeCode(f.ErrorCode), f.ErrorDetail is { Length: > 2000 } ? f.ErrorDetail[..2000] : f.ErrorDetail,
+            f.ProcessMs, f.FaceMatchScore, storage.OutputPrefix));
+
+        if (res.Code is 92 or 93)
+        {
+            foreach (var up in uploaded) await storage.DeleteAsync(up.PublicId, ct);   // orphan uploads hatao
+            return res.Code == 92 ? Conflict(new { error = "LEASE_INVALID" }) : BadRequest(new { error = "OUTPUT_REJECTED" });
+        }
+
+        // Outputs bhi retention me (90 din), taaki RetentionJob inhe baad me delete kare
+        if (res.FinalStatus == "completed" && res.AppId is not null && res.UserId is not null)
+            foreach (var up in uploaded)
+                await db.CreateAssetAsync(res.AppId, res.UserId, "output", up.PublicId,
+                    up.Format == "png" ? "image/png" : up.Format == "webp" ? "image/webp" : "image/jpeg",
+                    up.Bytes, up.Width, up.Height, retentionDays: 90);
+
+        if (res.FinalStatus is "completed" or "failed" && res.AppId is not null)
+            await webhooks.NotifyAsync(res.AppId, res.UserId!, publicId, res.FinalStatus, res.FinalStatus == "failed" ? SafeCode(f.ErrorCode) : null, ct);
+
+        return Ok(new { status = res.FinalStatus });
+    }
+
+    public sealed class CompleteForm
+    {
+        public Guid LeaseId { get; set; }
+        public bool Success { get; set; }
+        public bool Retryable { get; set; }
+        public string? OutputText { get; set; }
+        public string? ErrorCode { get; set; }
+        public string? ErrorDetail { get; set; }
+        public int? ProcessMs { get; set; }
+        public decimal? FaceMatchScore { get; set; }
+        public List<IFormFile>? Images { get; set; }
+    }
+
+    // Customer ko jaane wala error code sirf in me se
+    private static readonly HashSet<string> AllowedCodes = new(StringComparer.Ordinal)
+        { "SAFETY_BLOCKED", "FACE_NOT_FOUND", "FACE_MISMATCH", "BAD_INPUT", "TIMEOUT", "GENERATION_FAILED" };
+
+    private static string? SafeCode(string? c) => c is null ? null : AllowedCodes.Contains(c) ? c : "GENERATION_FAILED";
 }

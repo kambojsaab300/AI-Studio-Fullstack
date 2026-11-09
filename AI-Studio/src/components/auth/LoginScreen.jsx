@@ -40,8 +40,8 @@ export function LoginScreen() {
     };
 
     return (
-        <div className="min-h-screen bg-[#07080d] flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-[#0e1320] border border-slate-800/80 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl animate-fadeIn">
+        <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-[#161616] border border-slate-800/80 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl animate-fadeIn">
                 <div className="flex justify-end">
                     <LangToggle />
                 </div>
@@ -71,7 +71,7 @@ export function LoginScreen() {
                             required
                             value={email}
                             onChange={e => setEmail(e.target.value)}
-                            className="w-full h-10 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                            className="w-full h-10 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
                         />
                     </div>
 
@@ -82,7 +82,7 @@ export function LoginScreen() {
                             required
                             value={password}
                             onChange={e => setPassword(e.target.value)}
-                            className="w-full h-10 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                            className="w-full h-10 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
                         />
                     </div>
 

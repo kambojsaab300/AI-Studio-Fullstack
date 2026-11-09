@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Search, SlidersHorizontal, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { TOOL_CATEGORIES, getToolCategory } from '../../constants/categories';
+import { cleanToolLabel } from '../../utils/formatters';
 
-export function ToolCatalogBar({ catalog, selectedTaskType, onSelectTaskType }) {
+export function ToolCatalogBar({ catalog, selectedTaskType, onSelectTaskType, defaultOpen = false, title, subtitle }) {
     const [search, setSearch] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('all');
-    const [showCatalog, setShowCatalog] = useState(false);
+    const [showCatalog, setShowCatalog] = useState(defaultOpen);
 
     const activeList = (catalog || []).filter(c => c.enabled);
 
@@ -19,17 +20,17 @@ export function ToolCatalogBar({ catalog, selectedTaskType, onSelectTaskType }) 
     });
 
     return (
-        <section className="bg-[#0e1320] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+        <section className="bg-[#161616] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
             {/* Top Bar: Title & Search */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
-                        <span>Select AI Studio Tool</span>
+                        <span>{title || 'Select AI Studio Tool'}</span>
                         <span className="text-xs font-mono font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
                             {activeList.length} Active Tools
                         </span>
                     </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">Choose an e-commerce, try-on, portrait, or styling workflow</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{subtitle || 'Choose an e-commerce, try-on, portrait, or styling workflow'}</p>
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -40,7 +41,7 @@ export function ToolCatalogBar({ catalog, selectedTaskType, onSelectTaskType }) 
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Search tools (e.g. suit, garment)..."
-                            className="w-full h-8 sm:h-9 bg-[#080b12] border border-slate-800 rounded-xl pl-8 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+                            className="w-full h-8 sm:h-9 bg-[#0f0f0f] border border-slate-800 rounded-xl pl-8 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
                         />
                     </div>
 
@@ -79,7 +80,7 @@ export function ToolCatalogBar({ catalog, selectedTaskType, onSelectTaskType }) 
                                     className={`whitespace-nowrap px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
                                         active 
                                             ? 'bg-amber-400 text-slate-950 font-bold shadow-sm' 
-                                            : 'bg-[#080b12] hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
+                                            : 'bg-[#0f0f0f] hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
                                     }`}
                                 >
                                     <span>{cat.icon}</span>
@@ -106,7 +107,7 @@ export function ToolCatalogBar({ catalog, selectedTaskType, onSelectTaskType }) 
                                     className={`p-2.5 sm:p-3 rounded-xl text-left border transition-all flex flex-col justify-between space-y-2 relative overflow-hidden group ${
                                         isSelected 
                                             ? 'bg-amber-400/15 border-amber-400 text-white shadow-md shadow-amber-400/10 ring-1 ring-amber-400/40' 
-                                            : 'bg-[#080b12] hover:bg-slate-800/80 border-slate-800/80 text-slate-300 hover:border-slate-700'
+                                            : 'bg-[#0f0f0f] hover:bg-slate-800/80 border-slate-800/80 text-slate-300 hover:border-slate-700'
                                     }`}
                                 >
                                     <div className="flex items-center justify-between w-full">
@@ -118,7 +119,7 @@ export function ToolCatalogBar({ catalog, selectedTaskType, onSelectTaskType }) 
                                         </span>
                                     </div>
                                     <p className={`text-xs font-bold line-clamp-2 leading-tight ${isSelected ? 'text-amber-300' : 'text-slate-200 group-hover:text-white'}`}>
-                                        {t.label}
+                                        {cleanToolLabel(t.label)}
                                     </p>
                                     <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1.5 border-t border-white/5 w-full">
                                         <span>{t.inputs?.length ? `${t.inputs.length} slots` : 'Prompt'}</span>

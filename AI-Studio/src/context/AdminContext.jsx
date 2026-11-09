@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '../api/client';
-import { API_URL, API_KEY, API, TABLES, REFRESH_MS } from '../api/config';
+import { adminApi } from '../api/adminApi';
+import { API_URL, API_KEY, REFRESH_MS } from '../api/config';
 import { setTaskTypes, setFamilyRoles } from '../constants/formDefaults';
 import { setModelCaps } from '../constants/models';
 
-const AdminContext = createContext(null);
+export const AdminContext = createContext(null);
 
 function parseJwt(token) {
     try {
@@ -74,7 +75,7 @@ export function AdminProvider({ children }) {
     const [screen, setScreenState] = useState(() => {
         try {
             const hash = window.location.hash.replace('#', '');
-            const valid = ['task', 'apps', 'builder', 'tools', 'workers', 'features'];
+            const valid = ['task', 'apps', 'builder', 'tools', 'workers', 'features', 'usage'];
             if (valid.includes(hash)) return hash;
             const saved = localStorage.getItem('aistudio_admin_screen');
             if (saved && valid.includes(saved)) return saved;
@@ -126,7 +127,7 @@ export function AdminProvider({ children }) {
 
         // Background server verification or cookie-session recovery
         if (initialAuth.session) {
-            client.rpc(API.IS_ADMIN).then(({ data, error }) => {
+            adminApi.isAdmin().then(({ data, error }) => {
                 if (error || !data) {
                     client.auth.signOut();
                     setIsAdmin(false);
@@ -153,10 +154,10 @@ export function AdminProvider({ children }) {
     const loadCatalog = useCallback(async () => {
         if (!sb || !isAdmin) return;
         const [cat, appsData, linksData, rolesData] = await Promise.all([
-            sb.from(TABLES.CATALOG).select('*').order('sort'),
-            sb.from(TABLES.APPS).select('*'),
-            sb.from(TABLES.APP_TASKS).select('*'),
-            sb.from(TABLES.FAMILY_ROLES).select('*').order('sort_order')
+            adminApi.listCatalog(),
+            adminApi.listApps(),
+            adminApi.listAppTasks(),
+            adminApi.listFamilyRoles()
         ]);
 
         if (cat.data) {
@@ -171,13 +172,15 @@ export function AdminProvider({ children }) {
     // 4. Load Models, Prompts, Settings
     const loadConfig = useCallback(async () => {
         if (!sb || !isAdmin) return;
-        const [s, k, m, pr] = await Promise.all([
-            sb.from(TABLES.SETTINGS).select('*').eq('id', 1).single(),
-            sb.from(TABLES.SECRETS).select('imgbb_api_key, brevo_api_key').eq('id', 1).single(),
-            sb.from(TABLES.MODELS).select('*').order('model_id'),
-            sb.from(TABLES.PROMPTS).select('*')
+        const [s, m, pr] = await Promise.all([
+            adminApi.getSettings(),
+            adminApi.listModels(),
+            adminApi.listPrompts()
         ]);
-        if (s.data) setCfg({ ...s.data, imgbb_api_key: k.data?.imgbb_api_key || '', brevo_api_key: k.data?.brevo_api_key || '' });
+        if (s.data) {
+            const sec = s.data.secrets || {};
+            setCfg({ ...(s.data.settings || {}), imgbb_api_key: sec.imgbb_api_key || '', brevo_api_key: sec.brevo_api_key || '' });
+        }
         if (m.data) {
             setModels(m.data);
             setModelCaps(m.data);
@@ -191,8 +194,8 @@ export function AdminProvider({ children }) {
     const loadWorkers = useCallback(async () => {
         if (!sb || !isAdmin) return;
         const [w, l] = await Promise.all([
-            sb.from(TABLES.WORKERS).select('*').order('worker_id'),
-            sb.from(TABLES.WORKER_LOAD).select('*')
+            adminApi.listWorkers(),
+            adminApi.listWorkerLoad()
         ]);
         if (w.data) setWorkers(w.data);
         if (l.data) setWorkerLoad(l.data);
@@ -202,10 +205,7 @@ export function AdminProvider({ children }) {
     const syncLiveTasks = useCallback(async () => {
         if (!sb || !isAdmin) return;
         try {
-            const { data } = await sb.from(TABLES.TASKS)
-                .select('id,task_type,model,prompt,aspect_ratio,image_size,status,error,output_image_url,worker_id,app_id,created_at,finished_at,duration_ms,process_ms')
-                .order('id', { ascending: false })
-                .limit(20);
+            const { data } = await adminApi.listTasks({ limit: 20 });
             if (data && data.length) {
                 setLiveTasks(prev => {
                     const byId = new Map(data.map(d => [d.id, d]));

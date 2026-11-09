@@ -9,9 +9,15 @@ export const getApiUrl = () => {
     if (typeof window !== 'undefined') {
         const customUrl = localStorage.getItem('aistudio_api_url');
         if (customUrl) return customUrl.replace(/\/$/, '');
-        // When running Vite dev or preview locally, route directly to local .NET API
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            return 'http://localhost:5005';
+        // When running Vite dev or preview locally or on LAN/WiFi, route directly to local .NET API
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(window.location.hostname)) {
+            return `http://${window.location.hostname}:5005`;
+        }
+        if (window.location.hostname && window.location.hostname.endsWith('.trycloudflare.com')) {
+            return 'https://carb-separate-photograph-tonight.trycloudflare.com';
+        }
+        if (window.location.hostname && window.location.hostname.endsWith('.loca.lt')) {
+            return 'https://aistudio-api.loca.lt';
         }
         if (window.location.origin && window.location.origin.includes('runasp.net')) {
             return window.location.origin;

@@ -1,15 +1,95 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, AlertCircle, CheckCircle2, Cpu, Image as ImageIcon } from 'lucide-react';
-import { useT, LangToggle } from '../src/i18n/lang';
-import { getLang } from '../src/i18n/lang';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+// Small inline icons: no icon library needed, so this file runs on its own (Gemini Canvas too).
+const ICON_PATHS = {
+    cpu: <><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /></>,
+    refresh: <><path d="M21 12a9 9 0 1 1-2.6-6.3" /><path d="M21 4v5h-5" /></>,
+    alert: <><circle cx="12" cy="12" r="10" /><path d="M12 8v5M12 16h.01" /></>,
+    check: <><circle cx="12" cy="12" r="10" /><path d="m8 12 3 3 5-6" /></>,
+    image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></>,
+    trash: <><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></>,
+    stop: <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
+};
+const Ico = ({ n, className = '' }) => (
+    <svg className={className} width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON_PATHS[n]}</svg>
+);
 
-// Text built outside render (log lines, timers, async work): reads the language at the moment it is written.
-const tl = (hi, en) => (getLang() === 'en' ? en : hi);
+const WORKER_CSS = String.raw`
+*,::before,::after{box-sizing:border-box;border-width:0;border-style:solid;border-color:#262626}
+html,body{margin:0}
+body{background:#0a0a0a;color:#d6d6d6;font-family:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:none;padding:0;cursor:pointer}
+button:disabled{cursor:not-allowed}
+input,select,textarea{background:transparent}
+.flex{display:flex}.inline-flex{display:inline-flex}.grid{display:grid}
+.items-center{align-items:center}.align-top{vertical-align:top}
+.justify-between{justify-content:space-between}.justify-center{justify-content:center}
+.flex-wrap{flex-wrap:wrap}.flex-1{flex:1 1 0%}
+.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.w-full{width:100%}.w-2{width:.5rem}.w-3{width:.75rem}.w-4{width:1rem}.w-5{width:1.25rem}.w-9{width:2.25rem}.w-10{width:2.5rem}.w-40{width:10rem}
+.h-2{height:.5rem}.h-3{height:.75rem}.h-4{height:1rem}.h-5{height:1.25rem}.h-8{height:2rem}.h-9{height:2.25rem}.h-10{height:2.5rem}
+.min-w-\[300px\]{min-width:300px}.min-h-screen{min-height:100vh}.max-h-56{max-height:14rem}
+.overflow-auto{overflow:auto}.overflow-x-auto{overflow-x:auto}
+.space-y-1>:not([hidden])~:not([hidden]){margin-top:.25rem}
+.space-y-3>:not([hidden])~:not([hidden]){margin-top:.75rem}
+.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}
+.gap-1{gap:.25rem}.gap-1\.5{gap:.375rem}.gap-2{gap:.5rem}.gap-3{gap:.75rem}
+.ml-1{margin-left:.25rem}.mr-2{margin-right:.5rem}
+.p-0\.5{padding:.125rem}.p-2{padding:.5rem}.p-3{padding:.75rem}.p-4{padding:1rem}
+.px-2{padding-left:.5rem;padding-right:.5rem}.px-2\.5{padding-left:.625rem;padding-right:.625rem}.px-3{padding-left:.75rem;padding-right:.75rem}.px-4{padding-left:1rem;padding-right:1rem}
+.py-0\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}.py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}.py-6{padding-top:1.5rem;padding-bottom:1.5rem}
+.pb-2\.5{padding-bottom:.625rem}
+.text-left{text-align:left}.text-center{text-align:center}
+.whitespace-nowrap{white-space:nowrap}.uppercase{text-transform:uppercase}.underline{text-decoration:underline}
+.font-sans{font-family:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif}.font-mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.font-semibold{font-weight:600}.font-bold{font-weight:700}.font-extrabold{font-weight:800}.font-black{font-weight:900}
+.text-\[10px\]{font-size:10px}.text-\[11px\]{font-size:11px}.text-xs{font-size:.75rem;line-height:1rem}.text-sm{font-size:.875rem;line-height:1.25rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-2xl{font-size:1.5rem;line-height:2rem}
+.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}.rounded-2xl{border-radius:1rem}.rounded-full{border-radius:9999px}
+.border{border-width:1px}.border-t{border-top-width:1px}.border-b{border-bottom-width:1px}
+.border-white\/5{border-color:rgba(255,255,255,.05)}.border-white\/10{border-color:rgba(255,255,255,.1)}
+.border-stone-700{border-color:#3a3a3a}.border-slate-700{border-color:#3a3a3a}.border-amber-300{border-color:#c4c4c4}.border-amber-400{border-color:#b5b5b5}
+.border-amber-400\/20{border-color:rgba(181,181,181,.2)}.border-sky-500\/30{border-color:rgba(14,165,233,.3)}
+.border-rose-500\/30{border-color:rgba(244,63,94,.3)}.border-rose-500\/40{border-color:rgba(244,63,94,.4)}
+.border-purple-500\/30{border-color:rgba(168,85,247,.3)}.border-emerald-500\/20{border-color:rgba(16,185,129,.2)}.border-amber-400\/30{border-color:rgba(181,181,181,.3)}
+.bg-\[\#0a0a0a\]{background-color:#0a0a0a}.bg-\[\#0f0f0f\]{background-color:#0f0f0f}.bg-\[\#161616\]{background-color:#161616}.bg-stone-800{background-color:#262626}
+.bg-amber-400{background-color:#b5b5b5}.bg-emerald-400{background-color:#34d399}
+.bg-rose-500\/10{background-color:rgba(244,63,94,.1)}.bg-slate-950\/60{background-color:rgba(10,10,10,.6)}
+.bg-sky-500\/10{background-color:rgba(14,165,233,.1)}.bg-purple-500\/10{background-color:rgba(168,85,247,.1)}
+.bg-emerald-500\/10{background-color:rgba(16,185,129,.1)}.bg-amber-400\/10{background-color:rgba(181,181,181,.1)}
+.text-white{color:#e4e4e4}.text-slate-100{color:#dedede}.text-stone-100{color:#e4e4e4}.text-stone-200{color:#e7e5e4}.text-stone-300{color:#d6d3d1}
+.text-stone-400{color:#a8a29e}.text-stone-500{color:#78716c}.text-stone-950{color:#0a0a0a}
+.text-amber-300{color:#c4c4c4}.text-emerald-300{color:#6ee7b7}.text-emerald-400{color:#34d399}
+.text-rose-200{color:#fecdd3}.text-rose-300{color:#fda4af}.text-sky-200{color:#bae6fd}
+.text-purple-300{color:#d8b4fe}
+.transition-colors{transition-property:color,background-color,border-color,fill,stroke;transition-duration:150ms;transition-timing-function:cubic-bezier(.4,0,.2,1)}
+.transition-all{transition-property:all;transition-duration:150ms;transition-timing-function:cubic-bezier(.4,0,.2,1)}
+.bg-amber-500\/20{background-color:rgba(163,163,163,.2)}.bg-rose-500{background-color:#f43f5e}
+.border-amber-500\/40{border-color:rgba(163,163,163,.4)}
+.text-slate-400{color:#9a9a9a}.text-slate-950{color:#0a0a0a}
+.shadow-\[0_0_12px_rgba\(245\,158\,11\,0\.3\)\]{box-shadow:0 0 12px rgba(181,181,181,.25)}
+.animate-ping{animation:ws-ping 1s cubic-bezier(0,0,.2,1) infinite}
+@keyframes ws-ping{75%,100%{transform:scale(2);opacity:0}}
+.shadow-lg{box-shadow:0 10px 15px -3px rgba(0,0,0,.3),0 4px 6px -4px rgba(0,0,0,.3)}
+.animate-spin{animation:ws-spin 1s linear infinite}
+.animate-pulse{animation:ws-pulse 2s cubic-bezier(.4,0,.6,1) infinite}
+@keyframes ws-spin{to{transform:rotate(360deg)}}
+@keyframes ws-pulse{50%{opacity:.5}}
+.hover\:underline:hover{text-decoration:underline}
+.hover\:text-amber-200:hover{color:#cfcfcf}.hover\:text-amber-300:hover{color:#c4c4c4}
+.hover\:bg-amber-300:hover{background-color:#c4c4c4}
+.focus\:outline-none:focus{outline:2px solid transparent;outline-offset:2px}
+.focus\:border-amber-400:focus{border-color:#b5b5b5}
+.disabled\:opacity-40:disabled{opacity:.4}
+@media (min-width:640px){.sm\:p-6{padding:1.5rem}.sm\:grid-cols-6{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media (min-width:768px){.md\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+`;
+if (typeof document !== 'undefined' && !document.getElementById('worker-styles')) {
+    const styleTag = document.createElement('style');
+    styleTag.id = 'worker-styles';
+    styleTag.textContent = WORKER_CSS;
+    document.head.appendChild(styleTag);
+}
 
-// ============================================================
-// AI Studio: .NET Core API Client (Standalone Inline Adapter)
-// Powered by .NET Core Web API & Microsoft SQL Server
-// ============================================================
 class ApiQueryBuilder {
     constructor(apiUrl, table, token) {
         this.apiUrl = apiUrl;
@@ -80,6 +160,7 @@ class ApiQueryBuilder {
         const headers = {
             'Content-Type': 'application/json',
             'Bypass-Tunnel-Reminder': 'true',
+            ...workerTokenHeaders(),
             ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
         };
         if (this._isSingle) {
@@ -156,8 +237,14 @@ function getEffectiveApiUrl(providedUrl) {
                 }
             }
         } catch { }
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            return 'http://localhost:5005';
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(window.location.hostname)) {
+            return `http://${window.location.hostname}:5005`;
+        }
+        if (window.location.hostname && window.location.hostname.endsWith('.trycloudflare.com')) {
+            return 'https://carb-separate-photograph-tonight.trycloudflare.com';
+        }
+        if (window.location.hostname && window.location.hostname.endsWith('.loca.lt')) {
+            return 'https://aistudio-api.loca.lt';
         }
         if (providedUrl) {
             return providedUrl.replace(/\/$/, "");
@@ -176,103 +263,22 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
         if (saved) currentUser = JSON.parse(saved);
     } catch { }
 
-    const authListeners = new Set();
-
     return {
         apiUrl: url,
-        auth: {
-            async signInWithPassword({ email, password }) {
-                try {
-                    const res = await fetch(`${url}/api/auth/login`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
-                        body: JSON.stringify({ email, password })
-                    });
-                    const json = await res.json();
-                    if (!res.ok) return { data: null, error: { message: json.error || tl('Login fail hua.', 'Login failed.') } };
-                    token = json.access_token;
-                    currentUser = json.user;
-                    try {
-                        localStorage.setItem('aistudio_token', token);
-                        localStorage.setItem('aistudio_user', JSON.stringify(currentUser));
-                    } catch { }
-                    authListeners.forEach(cb => cb('SIGNED_IN', { user: currentUser, access_token: token }));
-                    return { data: { user: currentUser, session: { access_token: token, user: currentUser } }, error: null };
-                } catch (err) {
-                    return { data: null, error: { message: err.message } };
-                }
-            },
-
-            async signInAnonymously() {
-                const guestEmail = `guest_${Date.now()}@aistudio.local`;
-                return this.signUp({ email: guestEmail, password: "Guest@123456" });
-            },
-
-            async signUp({ email, password }) {
-                try {
-                    const res = await fetch(`${url}/api/auth/signup`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
-                        body: JSON.stringify({ email, password })
-                    });
-                    const json = await res.json();
-                    if (!res.ok) return { data: null, error: { message: json.error || tl('Signup fail hua.', 'Signup failed.') } };
-                    token = json.access_token;
-                    currentUser = json.user;
-                    try {
-                        localStorage.setItem('aistudio_token', token);
-                        localStorage.setItem('aistudio_user', JSON.stringify(currentUser));
-                    } catch { }
-                    authListeners.forEach(cb => cb('SIGNED_IN', { user: currentUser, access_token: token }));
-                    return { data: { user: currentUser, session: { access_token: token, user: currentUser } }, error: null };
-                } catch (err) {
-                    return { data: null, error: { message: err.message } };
-                }
-            },
-
-            async signOut() {
-                token = "";
-                currentUser = null;
-                try {
-                    localStorage.removeItem('aistudio_token');
-                    localStorage.removeItem('aistudio_user');
-                } catch { }
-                authListeners.forEach(cb => cb('SIGNED_OUT', null));
-                return { error: null };
-            },
-
-            async getSession() {
-                if (token && currentUser) return { data: { session: { access_token: token, user: currentUser } }, error: null };
-                return { data: { session: null }, error: null };
-            },
-
-            async getUser() {
-                return { data: { user: currentUser }, error: null };
-            },
-
-            onAuthStateChange(callback) {
-                authListeners.add(callback);
-                return {
-                    data: {
-                        subscription: {
-                            unsubscribe: () => authListeners.delete(callback)
-                        }
-                    }
-                };
-            }
-        },
 
         from(table) {
             return new ApiQueryBuilder(url, table, token);
         },
 
-        async rpc(functionName, params = {}) {
+        async rpc(functionName, params = {}, extraHeaders = {}) {
             try {
                 const res = await fetch(`${url}/rest/v1/rpc/${functionName}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Bypass-Tunnel-Reminder': 'true',
+                        ...workerTokenHeaders(),
+                        ...extraHeaders,
                         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                     },
                     body: JSON.stringify(params || {})
@@ -306,20 +312,10 @@ function createClient(apiUrl = "https://aistudio.runasp.net", apiKey = "") {
     };
 }
 
-// ============================================================
-// AI STUDIO WORKER: picks tasks, calls the model, uploads photos (ImgBB + Cloudinary), saves the result.
-// Limits come from the ai_studio_settings table, so they can be changed while the worker runs.
-// Powered by .NET Core Web API & Microsoft SQL Server
-// ============================================================
-
-// ── Config ──
 const API_URL = "https://aistudio.runasp.net";
-// Realtime (instant updates). The blob: preview (Canvas) does not allow WebSockets, so there the timers do the work.
 const USE_REALTIME = location.protocol !== 'blob:';
-// Publishable key: safe in the app code (row security protects the data)
 const API_KEY = "aistudio_worker_local_key";
 
-// Repeats fn. The delay is read again after every run, so a new value from the database is used at once.
 function everyMs(fn, delayOf) {
     let t;
     const tick = () => { fn(); t = setTimeout(tick, delayOf()); };
@@ -327,14 +323,57 @@ function everyMs(fn, delayOf) {
     return () => clearTimeout(t);
 }
 
-// Gemini key: read from this browser only (localStorage "gemini_api_key", same as weargen automatic).
-// Strict check: it must look like AIza followed by at least 30 letters, digits, _ or -.
-const GEMINI_KEY_STORAGE = 'gemini_api_key';
+const WORKER_KEY_STORAGE = 'ai_studio_worker_key';
+const WORKER_TOKEN_STORAGE = 'ai_studio_worker_token';
+const workerTokenHeaders = () => {
+    try {
+        const token = sessionStorage.getItem(WORKER_TOKEN_STORAGE);
+        return token ? { 'X-Worker-Token': token } : {};
+    } catch { return {}; }
+};
+// New API worker auth: "Authorization: Worker <token>" (see WorkerTokenAuthHandler)
+const workerAuthHeader = () => {
+    try {
+        const token = sessionStorage.getItem(WORKER_TOKEN_STORAGE);
+        return token ? { Authorization: `Worker ${token}` } : {};
+    } catch { return {}; }
+};
+// Worker API helpers (worker token auth). workerCall resolves to { status, data } and never throws.
+const workerCall = async (client, method, path, body) => {
+    try {
+        const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+        const res = await fetch(`${client.apiUrl}${path}`, {
+            method,
+            headers: {
+                'Bypass-Tunnel-Reminder': 'true',
+                ...(body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
+                ...workerAuthHeader()
+            },
+            ...(body !== undefined ? { body: isForm ? body : JSON.stringify(body) } : {})
+        });
+        if (res.status === 204) return { status: 204, data: null };
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+        return { status: res.status, data };
+    } catch (err) {
+        return { status: 0, data: null, error: err.message };
+    }
+};
+const wBlobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+});
+// Loads one input image the worker is allowed to see (lease-checked on the server) as a data URL.
+const fetchInputDataUrl = async (client, path) => {
+    const res = await fetch(`${client.apiUrl}${path}`, { headers: { 'Bypass-Tunnel-Reminder': 'true', ...workerAuthHeader() } });
+    if (!res.ok) throw new Error(`Input load HTTP ${res.status}`);
+    return wBlobToDataUrl(await res.blob());
+};
 const GEMINI_API_KEY = "";   // provided by the Canvas environment (as in the sample code)
-const validGeminiKey = (k) => /^AIza[0-9A-Za-z_-]{30,}$/.test((k || '').trim());
 
-// Engine values from the database (get_worker_config). The numbers here are only the starting values,
-// used until the first config arrives.
 let RUNTIME = {
     match_model: 'gemini-3-flash-preview',
     match_threshold: 70,          // face score below this -> generate again
@@ -364,11 +403,8 @@ function applyRuntime(d) {
     };
 }
 
-// Used until the settings table is read. Same values as the table defaults.
-const DEFAULT_SETTINGS = { task_concurrency: 20, gemini_concurrency: 8, photos_per_task_max: 50, max_attempts: 2, retry_delay_sec: 30, task_timeout_sec: 300, budget_left: null, disabled_models: [], cloudinary_enabled: true, cloudinary_cloud_name: 'draaqjcre', cloudinary_upload_preset: 'ml_default', imgbb_enabled: false, imgbb_api_key: '', worker_recycle_after_tasks: 50 };
+const DEFAULT_SETTINGS = { task_concurrency: 20, gemini_concurrency: 8, photos_per_task_max: 50, max_attempts: 3, retry_delay_sec: 30, task_timeout_sec: 300, budget_left: null, disabled_models: [], cloudinary_enabled: true, cloudinary_cloud_name: 'draaqjcre', cloudinary_upload_preset: 'ml_default', imgbb_enabled: false, imgbb_api_key: '', worker_recycle_after_tasks: 50 };
 
-// ── API: every call the app makes, named in one place ──
-// Database functions (sb.rpc)
 const API = {
     REGISTER_WORKER: 'register_ai_studio_worker',  // GET a worker id: worker_1, worker_2 ...
     HEARTBEAT: 'worker_heartbeat',                 // "I am alive". Returns paused (true / false)
@@ -381,10 +417,10 @@ const API = {
     GET_CATALOG: 'get_task_catalog',               // GET the task types: names, photo slots, rules (from ai_studio_task_catalog)
     GET_FAMILY_ROLES: 'get_family_roles',          // GET the family photo roles, in order (from ai_studio_family_roles)
     AUTO_PAUSE: 'worker_auto_pause',               // pause myself (too many failures, bad key)
-    TAKE_BUDGET: 'worker_budget_take'              // use one Gemini call from today's budget
+    TAKE_BUDGET: 'worker_budget_take',             // use one Gemini call from today's budget
+    GET_GEMINI_KEYS: 'worker_get_gemini_keys'      // GET the enabled Gemini keys (needs this worker's token)
 };
 
-// Database tables (sb.from)
 const TABLES = {
     TASKS: 'ai_studio_tasks',                      // GET my tasks
     WORKERS: 'ai_studio_workers',                  // realtime: is my pause flag changed?
@@ -395,14 +431,6 @@ const TABLES = {
     MODELS: 'ai_studio_models'                     // realtime: model changed
 };
 
-// External services
-
-// ── Models and task types (the same list the admin app uses) ──
-
-// inputs: which reference images the task takes. optional: inputs that may be left out.
-// labels: names of the inputs for this type. extras: more photos allowed. promptRequired: prompt must be filled.
-// faceCheck: compare the face in the result with IMAGE 1. The instruction text comes from the database (ai_studio_prompts).
-// The task types come from the database (ai_studio_task_catalog). loadSettings() fills this.
 const TASK_TYPES = {};
 function toTaskType(r) {
     return {
@@ -428,21 +456,10 @@ function setTaskTypes(rows) {
 }
 const INPUT_LABEL = { face: 'Face reference', style: 'Style / outfit reference', input: 'Input photo' };
 const INPUT_COLUMN = { face: 'face_image_url', style: 'style_image_url', input: 'input_image_url' };
-// Name of an input for this task type (person and product tasks name them differently)
 const labelFor = (type, key) => type.labels?.[key] || INPUT_LABEL[key];
 
-
-const STATUS_STYLE = {
-    pending: 'text-stone-300 bg-stone-800 border-white/10',
-    processing: 'text-sky-300 bg-sky-500/10 border-sky-500/30',
-    done: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
-    failed: 'text-rose-300 bg-rose-500/10 border-rose-500/30'
-};
-
-// ── Helpers ──
 const loadApiClient = () => Promise.resolve({ createClient });
 
-// Limiter: runs at most `max` jobs at once. `max` can be a number or a function, so a settings change applies.
 const createLimiter = (max) => {
     let active = 0;
     const queue = [];
@@ -459,11 +476,8 @@ const createLimiter = (max) => {
     return limiter;
 };
 
-// Image URL -> base64 (no prefix)
-// Photos already downloaded (URL -> base64). Keeps the last 60, so the same photo is not downloaded again.
 const inputCache = new Map();
 
-// Task-specific cache cleaner: deletes input, face, style and extra images from memory
 function cleanTaskCache(task) {
     if (!task) return;
     const urls = [
@@ -477,7 +491,6 @@ function cleanTaskCache(task) {
     }
 }
 
-// Complete memory purge: clears all cached images and triggers browser GC if exposed
 function purgeAllMemory() {
     inputCache.clear();
     if (typeof window !== 'undefined' && window.gc) {
@@ -485,7 +498,6 @@ function purgeAllMemory() {
     }
 }
 
-// Live memory usage reader (JS Heap in MB)
 function getMemoryStats() {
     if (typeof window !== 'undefined' && window.performance && window.performance.memory) {
         const { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit } = window.performance.memory;
@@ -504,31 +516,56 @@ function getMemoryStats() {
         supported: false
     };
 }
-async function urlToBase64(url) {
+const INPUT_CACHE_MAX = 10;
+
+const b64Of = (dataUrl) => dataUrl.slice(dataUrl.indexOf(',') + 1);
+
+async function urlToBase64(url, { cache = true } = {}) {
     if (!url) return '';
     if (inputCache.has(url)) return inputCache.get(url);
-    if (typeof url === 'string' && url.startsWith('data:')) {
-        const parts = url.split(',');
-        const b64 = parts[1] || parts[0];
-        inputCache.set(url, b64);
-        return b64;
-    }
+    if (typeof url === 'string' && url.startsWith('data:')) return b64Of(url);
     const blob = await (await fetch(url)).blob();
     const b64 = await new Promise((resolve, reject) => {
         const r = new FileReader();
-        r.onload = () => resolve(String(r.result).split(',')[1]);
+        r.onload = () => resolve(b64Of(String(r.result)));
         r.onerror = reject;
         r.readAsDataURL(blob);
     });
-    inputCache.set(url, b64);
-    if (inputCache.size > 20) inputCache.delete(inputCache.keys().next().value);
+    if (cache) {
+        inputCache.set(url, b64);
+        if (inputCache.size > INPUT_CACHE_MAX) inputCache.delete(inputCache.keys().next().value);
+    }
     return b64;
 }
 
-// Generated image (data URL) -> Cloudinary link. Cloud name and preset come from the admin settings.
-async function uploadDataUrlToCloudinary(dataUrl, cfg) {
+// shouldStop(): when it returns true no new item is started (items already running finish); unstarted results stay undefined
+async function mapSettledLimit(items, limit, fn, shouldStop) {
+    const results = new Array(items.length);
+    let next = 0;
+    const runOne = async () => {
+        while (next < items.length && !(shouldStop && shouldStop())) {
+            const i = next++;
+            try { results[i] = { status: 'fulfilled', value: await fn(items[i], i) }; }
+            catch (reason) { results[i] = { status: 'rejected', reason }; }
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runOne));
+    return results;
+}
+
+const MAX_HEAP_MB_FOR_PICKUP = 120;
+const PER_PHOTO_PARALLEL = 8;          // photos of one per-photo batch made at the same time (scaled up from 4 to 8)
+const SECONDS_PER_ROUND = 85;          // time budget for one round of parallel photos (generate + upload)
+const MAX_TASK_TIMEOUT_SEC = 25 * 60;  // a single task never runs longer than 25 minutes
+const FINISH_MARGIN_MS = 60 * 1000;    // per-photo batches stop starting new photos 60s before the timeout
+
+const dataUrlToBlob = async (dataUrl) => (await fetch(dataUrl)).blob();
+const canvasToBlob = (c, type, quality) => new Promise((resolve, reject) =>
+    c.toBlob(b => (b ? resolve(b) : reject(new Error('Canvas blob nahi bana'))), type, quality));
+
+async function uploadDataUrlToCloudinary(blob, cfg) {
     const fd = new FormData();
-    fd.append('file', dataUrl);
+    fd.append('file', blob, 'photo.jpg');
     fd.append('upload_preset', cfg.cloudinary_upload_preset);
     const url = `https://api.cloudinary.com/v1_1/${cfg.cloudinary_cloud_name}/image/upload`;
     const data = await (await fetch(url, { method: 'POST', body: fd })).json();
@@ -536,20 +573,17 @@ async function uploadDataUrlToCloudinary(dataUrl, cfg) {
     return data.secure_url;
 }
 
-// Generated image (data URL) -> ImgBB link. Needs the ImgBB key typed in the app.
-async function uploadToImgbb(dataUrl, key) {
+async function uploadToImgbb(blob, key) {
     if (!key) throw new Error('ImgBB key nahi di');
     const fd = new FormData();
     fd.append('key', key);
-    fd.append('image', dataUrl.split(',')[1]);
+    fd.append('image', blob, 'photo.png');
     const data = await (await fetch(RUNTIME.imgbb_upload_url, { method: 'POST', body: fd })).json();
     if (!data.success) throw new Error(data.error?.message || 'ImgBB upload failed');
     return data.data.url;
 }
 
-// Family photo roles come from the database (ai_studio_family_roles). loadSettings() fills this.
 let FAMILY_ROLES = [];   // [{ role_key, prompt_text }] in order
-// The order line for a family task: the role keys the task was made with, for the photos that are there
 function familyOrderText(task) {
     const keys = task.family_role_keys || FAMILY_ROLES.map(r => r.role_key);
     const names = Object.fromEntries(FAMILY_ROLES.map(r => [r.role_key, r.prompt_text || r.role_key]));
@@ -557,8 +591,6 @@ function familyOrderText(task) {
     return `Photo order: ${present.map((k, i) => `IMAGE ${i + 1} = ${names[k] || k}`).join(', ')}.`;
 }
 
-// The instruction text for a task. Image types take their text from the database row (p, from ai_studio_prompts).
-// The admin preview uses this same function.
 function instructionFor(task, p) {
     const userPrompt = (task.prompt || '').trim();
     if (task.task_type === 'chat') return userPrompt;
@@ -578,7 +610,6 @@ function instructionFor(task, p) {
     return text;
 }
 
-// ── Photo edit: only the masked area comes from the model, everything else is the original pixels ──
 function loadImage(src) {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -588,8 +619,6 @@ function loadImage(src) {
     });
 }
 
-// photoB64 / maskB64: raw base64 (no prefix). generatedDataUrl: the model result.
-// Mask: white-red area = take the model result, black = keep the original photo pixel for pixel.
 async function compositeEdit(photoB64, maskB64, generatedDataUrl) {
     const [photo, mask, gen] = await Promise.all([
         loadImage(`data:image/jpeg;base64,${photoB64}`),
@@ -630,25 +659,25 @@ async function compositeEdit(photoB64, maskB64, generatedDataUrl) {
     return result;
 }
 
-// ── Smaller pictures: at most 2048 px on the long side, saved as JPEG (safe to store, much less space) ──
-async function shrinkDataUrl(dataUrl) {
-    const img = await loadImage(dataUrl);
-    const k = Math.min(1, RUNTIME.image_max_side / Math.max(img.naturalWidth, img.naturalHeight));
+async function shrinkToBlob(blob) {
+    const bmp = await createImageBitmap(blob);
+    const k = Math.min(1, RUNTIME.image_max_side / Math.max(bmp.width, bmp.height));
     const c = document.createElement('canvas');
-    c.width = Math.round(img.naturalWidth * k);
-    c.height = Math.round(img.naturalHeight * k);
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(img, 0, 0, c.width, c.height);
-    const result = c.toDataURL('image/jpeg', RUNTIME.image_quality);
-    c.width = 0;
-    c.height = 0;
-    img.src = '';
-    return result;
+    ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close();
+    try {
+        return await canvasToBlob(c, 'image/jpeg', RUNTIME.image_quality);
+    } finally {
+        c.width = 0;
+        c.height = 0;
+    }
 }
 
-// ── Transparent output: pure white becomes transparent, soft edges become partly see-through ──
 async function knockoutWhite(dataUrl) {
     const img = await loadImage(dataUrl);
     const w = img.naturalWidth;
@@ -672,9 +701,7 @@ async function knockoutWhite(dataUrl) {
     return result;
 }
 
-// ── Model call: one function for every task type ──
-// Returns { text } for text tasks, or { image: { dataUrl, mimeType } } for image tasks.
-async function callAiStudio(task, inputs, apiKey, promptRow) {
+async function callAiStudio(task, inputs, apiKey, promptRow, opts = {}) {
     let type = TASK_TYPES[task.task_type];
     if (!type && sbRef.current) {
         await loadSettings(sbRef.current);
@@ -690,7 +717,6 @@ async function callAiStudio(task, inputs, apiKey, promptRow) {
         if (task.image_size && !caps.sizes.includes(task.image_size)) throw new Error(`${task.model} mein size ${task.image_size} support nahi`);
     }
 
-    // Parts in a fixed order: text, face (IMAGE 1), style (IMAGE 2), input photo, then extra photos
     const parts = [{ text: instructionFor(task, promptRow) }];
     for (const key of ['face', 'style', 'input']) {
         if (inputs[key]) parts.push({ inlineData: { mimeType: 'image/jpeg', data: inputs[key] } });
@@ -699,7 +725,6 @@ async function callAiStudio(task, inputs, apiKey, promptRow) {
         parts.push({ inlineData: { mimeType: 'image/jpeg', data: extra } });
     }
 
-    // Chat: finished messages of the same conversation come first, so the model remembers them
     const contents = [
         ...(task.history || []).flatMap(h => [
             { role: 'user', parts: [{ text: h.prompt }] },
@@ -719,11 +744,14 @@ async function callAiStudio(task, inputs, apiKey, promptRow) {
     let data = null;
     for (let attempt = 0; attempt < 5; attempt++) {
         try {
-            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            let res;
+            res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             data = await res.json();
             if (!res.ok) {
                 const err = new Error(data.error?.message || `HTTP ${res.status}`);
+                err.status = res.status;
                 if ([400, 401, 403, 404].includes(res.status)) err.retry = false;
+                if (res.status === 429 && opts.switchOn429) err.retry = false;
                 throw err;
             }
             break;
@@ -749,7 +777,6 @@ async function callAiStudio(task, inputs, apiKey, promptRow) {
     return { text };
 }
 
-// Face score: compares the reference face (IMAGE 1) with a generated photo (IMAGE 2). Returns 0-100, or null.
 async function checkFaceMatch(faceB64, outputB64, apiKey) {
     const body = {
         contents: [{ role: 'user', parts: [
@@ -763,8 +790,8 @@ async function checkFaceMatch(faceB64, outputB64, apiKey) {
         const res = await fetch(`${RUNTIME.gemini_base}/${RUNTIME.match_model}:generateContent?key=${apiKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
-        const data = await res.json();
-        const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+        const data = await res.json().catch(() => null);
+        const text = (data?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
         const score = Number(JSON.parse(text).score);
         return Number.isFinite(score) ? score : null;
     } catch {
@@ -772,7 +799,6 @@ async function checkFaceMatch(faceB64, outputB64, apiKey) {
     }
 }
 
-// Rejects if the task runs longer than `ms` (the task keeps running in the background, but the worker moves on)
 const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timeout: ${ms / 1000} second se zyada chala`)), ms);
     promise.then(
@@ -782,85 +808,58 @@ const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
 });
 
 export default function AiStudioWorker() {
-    const t = useT();
     const [apiKey, setApiKey] = useState(API_KEY);
-    const [customApiUrl, setCustomApiUrl] = useState(() => getEffectiveApiUrl(API_URL));
-    // Reads the browser key (gemini_api_key). An older save under ai_studio_api_key is used too if it is the only one.
-    const [aiStudioKey, setAiStudioKey] = useState(() => {
-        const first = (localStorage.getItem(GEMINI_KEY_STORAGE) || '').trim();
-        if (validGeminiKey(first)) return first;
-        return (localStorage.getItem('ai_studio_api_key') || '').trim();
-    });
-    const [keyDraft, setKeyDraft] = useState('');
-    const [keyMsg, setKeyMsg] = useState('');
+    const [customApiUrl] = useState(() => getEffectiveApiUrl(API_URL));
 
-    // Save Configuration: the key goes to this browser (localStorage gemini_api_key), like weargen automatic
-    const saveGeminiKey = () => {
-        const k = keyDraft.trim();
-        if (!validGeminiKey(k)) return setKeyMsg(t('Key galat hai. AIza se shuru honi chahiye.', 'Wrong key. It must start with AIza.'));
-        localStorage.setItem(GEMINI_KEY_STORAGE, k);
-        setAiStudioKey(k);
-        setKeyDraft('');
-        setKeyMsg('');
-    };
     const [sb, setSb] = useState(null);
     const [workerId, setWorkerId] = useState('');
     const [paused, setPaused] = useState(false);
     const [drain, setDrain] = useState(false);
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-    const [myTasks, setMyTasks] = useState([]);
     const [logs, setLogs] = useState([]);
     const MAX_LOGS = 30; // 30 records hone par pura log automatic clear/reset ho jayega
     const log = useCallback((text) => {
         setLogs(prev => {
             if (prev.length >= MAX_LOGS) {
-                // 30 records pure hone par screen se purane logs clear karke fresh start
                 return [
                     { t: new Date().toLocaleTimeString(), text },
-                    { t: new Date().toLocaleTimeString(), text: tl('⚡ [Auto-Clear] 30 logs limit reached: Screen logs reset ho gaye', '⚡ [Auto-Clear] 30 logs limit reached: screen logs were reset') }
+                    { t: new Date().toLocaleTimeString(), text: '⚡ [Auto-Clear] 30 logs limit reached: screen logs were reset' }
                 ];
             }
             return [{ t: new Date().toLocaleTimeString(), text }, ...prev];
         });
     }, []);
 
-    // Auto-clear watcher: jaise hi 30 logs reach hote hain, screen 1.5s me auto-clean ho jayegi
     useEffect(() => {
         if (logs.length >= 30) {
             const timer = setTimeout(() => {
                 setLogs([
-                    { t: new Date().toLocaleTimeString(), text: tl('⚡ [Auto-Clear] 30 logs pure ho gaye: Screen logs auto-clear ho gaye', '⚡ [Auto-Clear] 30 logs reached: screen logs auto-cleared') }
+                    { t: new Date().toLocaleTimeString(), text: '⚡ [Auto-Clear] 30 logs reached: screen logs auto-cleared' }
                 ]);
             }, 1500);
             return () => clearTimeout(timer);
         }
     }, [logs.length]);
     const [running, setRunning] = useState(0);
-    const [refreshIntervalSec, setRefreshIntervalSec] = useState(() => Math.round(RUNTIME.fallback_ms / 1000) || 2);
-    const [nextDbSec, setNextDbSec] = useState(() => Math.round(RUNTIME.fallback_ms / 1000) || 2);
-    const [lastDbFetch, setLastDbFetch] = useState('');
     const [memStats, setMemStats] = useState(() => getMemoryStats());
 
-    // Live Memory monitor & auto-cleanup (runs every 3 seconds)
     useEffect(() => {
         const checkMemory = () => {
             const stats = getMemoryStats();
-            setMemStats(stats);
-            // If used JS Heap is above 150 MB or cache has > 20 items, auto-clean
-            if ((stats.supported && stats.usedMB > 150) || inputCache.size > 20) {
+            setMemStats(prev => (prev.usedMB === stats.usedMB && prev.supported === stats.supported ? prev : stats));
+            if (stats.supported && stats.usedMB > 100) {
                 const countBefore = inputCache.size;
                 const ramBefore = stats.usedMB;
                 purgeAllMemory();
                 const newStats = getMemoryStats();
                 setMemStats(newStats);
-                log(tl(`[Auto-RAM Purge] RAM ${ramBefore}MB high tha. Caches saaf hue (${countBefore} items). RAM ab: ${newStats.usedMB || 'OK'}MB`, `[Auto-RAM Purge] RAM was ${ramBefore}MB (high). Caches cleared (${countBefore} items). RAM now: ${newStats.usedMB || 'OK'}MB`));
+                log(`[Auto-RAM Purge] RAM was ${ramBefore}MB (high). Caches cleared (${countBefore} items). RAM now: ${newStats.usedMB || 'OK'}MB`);
             }
         };
         const timer = setInterval(checkMemory, 3000);
         return () => clearInterval(timer);
     }, [log]);
 
-    // Refs so the timers, limiters and realtime handlers always see the latest values
     const sbRef = useRef(null);
     const workerIdRef = useRef('');
     const pausedRef = useRef(false);
@@ -876,68 +875,86 @@ export default function AiStudioWorker() {
     const inFlight = useRef(new Set());
     const retryAfterMap = useRef(new Map()); // taskId -> timestamp ms jab tak retry wait karna hai
     const connectingRef = useRef(false); // parallel/duplicate connect calls prevent karne ke liye
-    // Dynamic Auto-Scaling (Standard: 10, Rush Turbo: 20 parallel tasks for < 1 min response)
     const dynamicTaskConcurrencyRef = useRef(10);
     const dynamicGeminiConcurrencyRef = useRef(8);
     const [isTurboMode, setIsTurboMode] = useState(false);
     const [currentConcurrency, setCurrentConcurrency] = useState(10);
 
-    // Tasks this worker runs at once, and model calls it makes at once. Both read the dynamic auto-scaled values.
     const taskLimiter = useRef(createLimiter(() => dynamicTaskConcurrencyRef.current)).current;
     const geminiLimiter = useRef(createLimiter(() => dynamicGeminiConcurrencyRef.current)).current;
 
     sbRef.current = sb;
 
-    // Live countdown timer for DB refresh interval
-    useEffect(() => {
-        if (!sb) return;
-        const timer = setInterval(() => {
-            setNextDbSec(prev => (prev > 1 ? prev - 1 : refreshIntervalSec));
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [sb, refreshIntervalSec]);
-
-    // The screen log is cleared every 10 minutes. It only clears what is on screen, not the database.
     useEffect(() => {
         const timer = setInterval(() => setLogs([]), 10 * 60 * 1000);
         return () => clearInterval(timer);
     }, []);
 
-    // This worker's tasks: one tab and one page per click (no polling)
     const [myTab, setMyTab] = useState('pending');
     const [myPage, setMyPage] = useState(0);
     const [myRows, setMyRows] = useState([]);
     const [myCounts, setMyCounts] = useState({});
     const MY_PAGE_SIZE = 10;
     const loadMyTasks = useCallback(async (tab, page) => {
-        const client = sbRef.current;
-        if (!client || !workerIdRef.current) return;
-        const from = page * MY_PAGE_SIZE;
-        const { data, error, count } = await client.from(TABLES.TASKS)
-            .select('id, app_id, task_type, model, status, error, output_text, output_image_url, imgbb_image_urls, face_match_score, batch_count, created_at', { count: 'exact' })
-            .eq('worker_id', workerIdRef.current)
-            .eq('status', tab)
-            .order('id', { ascending: false })
-            .range(from, from + MY_PAGE_SIZE - 1);
-        if (error) return log('Tasks load error: ' + error.message);
-        setMyRows(data || []);
-        setMyCounts(prev => ({ ...prev, [tab]: count ?? 0 }));
+        if (!workerIdRef.current) return;
+        // The per-worker task list is not on the worker API; task history lives in the Admin portal.
+        setMyRows([]);
+        setMyCounts(prev => ({ ...prev, [tab]: 0 }));
     }, [log]);
     const pickTab = (tab) => { setMyTab(tab); setMyPage(0); loadMyTasks(tab, 0); };
     const goPage = (page) => { setMyPage(page); loadMyTasks(myTab, page); };
     refreshRef.current = () => {};   // the list is not reloaded by timers; only on click or the Refresh button
 
+    const deleteTask = async (task) => {
+        if (!window.confirm(`Task #${task.id} ko database se permanently delete karna chahte hain?`)) return;
+        try {
+            const client = sbRef.current;
+            if (client) {
+                throw new Error('Ye action Admin portal se karein');
+            }
+            setMyRows(rows => rows.filter(r => r.id !== task.id));
+            setMyCounts(c => ({ ...c, [myTab]: Math.max(0, (c[myTab] || 1) - 1) }));
+            log(`Task #${task.id} database se permanently delete ho gaya`);
+        } catch (err) {
+            alert('Delete fail hua: ' + err.message);
+        }
+    };
 
-    // Read the worker config from the DB: limits, upload switches, cloud settings and the ImgBB key.
-    // Runs on connect and whenever the admin changes the settings.
+    const stopTask = async (task) => {
+        try {
+            const client = sbRef.current;
+            if (client) {
+                throw new Error('Ye action Admin portal se karein');
+            }
+            setMyRows(rows => rows.map(r => r.id === task.id ? { ...r, status: 'failed', error: 'Stopped by user' } : r));
+            log(`Task #${task.id} stop kar diya gaya`);
+        } catch (err) {
+            alert('Stop fail hua: ' + err.message);
+        }
+    };
+
+    const clearAllFailed = async () => {
+        if (!window.confirm('Kya aap is worker ke saare failed tasks ko database se permanently delete karna chahte hain?')) return;
+        try {
+            const client = sbRef.current;
+            if (client) {
+                throw new Error('Ye action Admin portal se karein');
+            }
+            setMyRows([]);
+            setMyCounts(c => ({ ...c, failed: 0 }));
+            log('Saare failed tasks database se delete kar diye gaye');
+        } catch (err) {
+            alert('Clear failed error: ' + err.message);
+        }
+    };
+
     const loadSettings = async (client) => {
-        // Task types from the database first: a task is never run with a type the database does not know
-        const { data: catalog } = await client.rpc(API.GET_CATALOG);
+        const { data: catalog } = await workerCall(client, 'GET', '/api/worker/catalog');
         if (catalog) setTaskTypes(catalog);
-        const { data: roles } = await client.rpc(API.GET_FAMILY_ROLES);
+        const { data: roles } = await workerCall(client, 'GET', '/api/worker/family-roles');
         if (roles) FAMILY_ROLES = roles;
-        const { data, error } = await client.rpc(API.GET_CONFIG, { p_worker_id: workerIdRef.current });
-        if (error || !data) return;
+        const { data, status } = await workerCall(client, 'GET', '/api/worker/settings');
+        if (status !== 200 || !data) return;
         settingsRef.current = data;
         applyRuntime(data);
         setSettings(data);
@@ -948,116 +965,212 @@ export default function AiStudioWorker() {
             dynamicGeminiConcurrencyRef.current = baseGeminiLimit;
             setCurrentConcurrency(baseTaskLimit);
         }
-        const fbSec = data?.fallback_sec || Math.round(RUNTIME.fallback_ms / 1000) || 2;
-        setRefreshIntervalSec(fbSec);
-        setNextDbSec(fbSec);
-        // Task prompts: a task whose prompt is missing or off is failed, never run with a default text
-        const { data: prompts } = await client.rpc(API.GET_PROMPTS, { p_worker_id: workerIdRef.current });
+        const { data: prompts } = await workerCall(client, 'GET', '/api/worker/prompts');
         if (prompts) promptsRef.current = Object.fromEntries(prompts.map(p => [p.task_type, p]));
         kickRef.current();
     };
 
-    // Ask the DB to claim one task. Returns true only if this worker got it.
-    const claim = async (id) => {
-        const { data, error } = await sbRef.current.rpc(API.CLAIM_TASK, { p_id: id, p_worker_id: workerIdRef.current });
-        if (error) throw error;
-        return (data || []).length > 0;
+    const leaseMap = new Map();   // task id -> { publicId, leaseId } for the tasks this worker holds
+    // Claims the next task (300 s lease). Inputs are fetched here, so processTask gets data URLs as before.
+    const claimNext = async (client) => {
+        const { status, data } = await workerCall(client, 'POST', '/api/worker/claim');
+        if (status === 204 || !data) return null;
+        if (status === 429) throw new Error('Aaj ka Gemini budget khatam');
+        if (status === 503) throw new Error('Maintenance mode on hai');
+        if (status !== 200) throw new Error(`Claim HTTP ${status}`);
+        const parseList = (v) => {
+            if (!v) return null;
+            try { const x = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(x) ? x : null; } catch { return null; }
+        };
+        const inputs = data.inputs || {};
+        const legacy = data.legacy || {};
+        const legacyFetch = async (url) => {
+            if (!url) return null;
+            const res = await fetch(`${client.apiUrl}/api/worker/legacy-fetch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true', ...workerAuthHeader() },
+                body: JSON.stringify({ url })
+            });
+            if (!res.ok) throw new Error(`Input URL load HTTP ${res.status}`);
+            return wBlobToDataUrl(await res.blob());
+        };
+        const pick = (path, legacyUrl) => (path ? fetchInputDataUrl(client, path) : legacyFetch(legacyUrl));
+        const [inputImg, faceImg, styleImg] = await Promise.all([
+            pick(inputs.input, legacy.InputImageUrl),
+            pick(inputs.face, legacy.FaceImageUrl),
+            pick(inputs.style, legacy.StyleImageUrl)
+        ]);
+        const extraPaths = inputs.extra || [];
+        const legacyExtras = parseList(legacy.ExtraImageUrls) || [];
+        const extras = extraPaths.length
+            ? await Promise.all(extraPaths.map(p => fetchInputDataUrl(client, p)))
+            : await Promise.all(legacyExtras.map(legacyFetch));
+        leaseMap.set(data.PublicId, { publicId: data.PublicId, leaseId: data.LeaseId });
+        return {
+            id: data.PublicId,
+            task_type: data.TaskType,
+            model: data.Model,
+            prompt: data.Prompt,
+            system_text: data.prompts?.SystemText || null,
+            aspect_ratio: data.AspectRatio,
+            image_size: data.ImageSize,
+            batch_count: data.BatchCount || 1,
+            attempts: data.Attempts || 0,
+            family_role_keys: parseList(data.FamilyRoleKeys),
+            input_image_url: inputImg,
+            face_image_url: faceImg,
+            style_image_url: styleImg,
+            extra_image_urls: extras,
+            conversation_id: null,
+            user_id: null,
+            tool: null,
+            app_id: null,
+            status: 'processing'
+        };
     };
 
-    // Send the result (or failure) back through the worker function. Only this worker can change its own task.
+    // Sends the result of one claimed task. images are data URLs; the server stores them.
     const complete = async (id, patch) => {
-        const { data, error } = await sbRef.current.rpc(API.SAVE_RESULT, { p_id: id, p_worker_id: workerIdRef.current, p_patch: patch });
-        if (error) throw error;
-        if (!data || data.length === 0) log(tl(`Task #${id}: ownership nahi mili, result save nahi hua`, `Task #${id}: ownership not found, result not saved`));
+        const client = sbRef.current;
+        const lease = leaseMap.get(id);
+        if (!client || !lease) { log(`Task #${id}: lease nahi mila, result save nahi hua`); return; }
+        const fd = new FormData();
+        const ok = patch.status === 'done';
+        fd.append('LeaseId', lease.leaseId);
+        fd.append('Success', String(ok));
+        fd.append('Retryable', String(patch.status === 'pending'));
+        if (patch.output_text) fd.append('OutputText', patch.output_text);
+        if (!ok) {
+            fd.append('ErrorCode', 'GENERATION_FAILED');
+            if (patch.error) fd.append('ErrorDetail', String(patch.error).slice(0, 2000));
+        }
+        if (patch.process_ms != null) fd.append('ProcessMs', String(patch.process_ms));
+        if (patch.face_match_score != null) fd.append('FaceMatchScore', String(patch.face_match_score));
+        for (const img of patch.images || []) {
+            fd.append('Images', await dataUrlToBlob(img), 'output.jpg');
+        }
+        const { status } = await workerCall(client, 'POST', `/api/worker/tasks/${lease.publicId}/complete`, fd);
+        if (status === 409) log(`Task #${id}: lease expire ho gaya, result server ne nahi liya`);
+        else if (status >= 400 || status === 0) throw new Error(`Complete HTTP ${status}`);
+        leaseMap.delete(id);
     };
 
-    // Model call through the Gemini limiter (so the total calls stay within the setting)
-    const takeCall = async () => {
-        const { data, error } = await sbRef.current.rpc(API.TAKE_BUDGET, { p_worker_id: workerIdRef.current, p_calls: 1 });
-        if (error) throw error;
-        if (!data) throw new Error('Aaj ka Gemini budget khatam');
+    // Budget is enforced when a task is claimed (429), so no per-call counter is needed here.
+    const takeCall = async () => {};
+    const keysRef = useRef([]);          // [{ id, key, coolUntil }]
+    const keyTurnRef = useRef(0);
+    // No Gemini keys are stored on the server yet; the canvas key is used (same as before).
+    const loadGeminiKeys = async () => {};
+    const pickKey = () => {
+        const keys = keysRef.current;
+        if (!keys.length) return { id: 0, key: GEMINI_API_KEY };
+        const now = Date.now();
+        const ready = keys.filter(k => !(k.coolUntil > now));
+        const pool = ready.length ? ready : [...keys].sort((a, b) => a.coolUntil - b.coolUntil).slice(0, 1);
+        return pool[keyTurnRef.current++ % pool.length];
     };
-    const askModel = (task, inputs) => geminiLimiter(async () => { await takeCall(); return callAiStudio(task, inputs, GEMINI_API_KEY, promptsRef.current[task.task_type]); });
-    const checkFace = (faceB64, outB64) => geminiLimiter(async () => { await takeCall(); return checkFaceMatch(faceB64, outB64, GEMINI_API_KEY); });
+    const isQuotaError = (err) => err?.status === 429 || /RESOURCE_EXHAUSTED|quota|rate limit/i.test(err?.message || '');
+    const isBadKeyError = (err) => [401, 403].includes(err?.status) || /API_KEY_INVALID|API key (not valid|invalid|expired)|PERMISSION_DENIED/i.test(err?.message || '');
+    const withGeminiKey = async (fn) => {
+        const tries = Math.max(1, keysRef.current.length);
+        let lastErr;
+        for (let i = 0; i < tries; i++) {
+            const k = pickKey();
+            try {
+                return await fn(k);
+            } catch (err) {
+                lastErr = err;
+                const quota = isQuotaError(err), bad = isBadKeyError(err);
+                if (!k.id || keysRef.current.length < 2 || !(quota || bad)) throw err;
+                k.coolUntil = Date.now() + (bad ? 10 * 60 * 1000 : 60 * 1000);
+                log(`Gemini key #${k.id} ${bad ? 'invalid' : 'out of quota'}, trying the next key`);
+            }
+        }
+        throw lastErr;
+    };
+    const askModel = (task, inputs, ctrl) => geminiLimiter(async () => {
+        if (ctrl?.aborted) throw new Error('Task stopped: time limit reached');
+        await takeCall();
+        if (ctrl?.aborted) throw new Error('Task stopped: time limit reached');
+        return withGeminiKey(k => callAiStudio(task, inputs, k.key, promptsRef.current[task.task_type], { switchOn429: keysRef.current.length > 1 }));
+    });
+    const checkFace = (faceB64, outB64, ctrl) => geminiLimiter(async () => {
+        if (ctrl?.aborted) throw new Error('Task stopped: time limit reached');
+        await takeCall();
+        const k = pickKey();
+        return checkFaceMatch(faceB64, outB64, k.key);
+    });
+    useEffect(() => {
+        if (!sb || !workerId) return;
+        loadGeminiKeys(sb);
+        const timer = setInterval(() => loadGeminiKeys(sbRef.current), 2 * 60 * 1000);
+        return () => clearInterval(timer);
+    }, [sb, workerId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const uploadImage = async (dataUrl, isTransparent) => {
+        const fullBlob = await dataUrlToBlob(dataUrl);
+        const smallBlob = isTransparent ? fullBlob : await shrinkToBlob(fullBlob);
+        return { image: await wBlobToDataUrl(smallBlob) };
+    };
 
-    // One photo: generate (again if the face is weak), then upload to every service the admin turned on
-    const makePhoto = async (task, inputs) => {
-        let best = null;
+    const makePhoto = async (task, inputs, ctrl) => {
+        const cfg = settingsRef.current;
+        const type = TASK_TYPES[task.task_type];
+        const wantFace = !!(inputs.face && type.faceCheck);
+        let best = null;   // { score, upload: Promise<{cloud, imgbb}> }
         for (let attempt = 0; attempt <= RUNTIME.match_retries; attempt++) {
-            const { image: generated } = await askModel(task, inputs);
-            const type = TASK_TYPES[task.task_type];
-            const image = type.edit
-                ? { dataUrl: await compositeEdit(inputs.face, inputs.style, generated.dataUrl), mimeType: 'image/jpeg' }
+            if (ctrl?.aborted) throw new Error('Task stopped: time limit reached');
+            const { image: generated } = await askModel(task, inputs, ctrl);
+            if (ctrl?.aborted) throw new Error('Task stopped: time limit reached');
+            let dataUrl = type.edit
+                ? await compositeEdit(inputs.face, inputs.style, generated.dataUrl)
                 : type.transparentOut
-                    ? { dataUrl: await knockoutWhite(generated.dataUrl), mimeType: 'image/png' }
-                    : generated;
-            const score = inputs.face && TASK_TYPES[task.task_type].faceCheck ? await checkFace(inputs.face, image.dataUrl.split(',')[1]) : null;
-            if (!best || (score ?? 0) > (best.score ?? 0)) best = { image, score };
+                    ? await knockoutWhite(generated.dataUrl)
+                    : generated.dataUrl;
+            generated.dataUrl = null;
+            if (ctrl?.aborted) throw new Error('Task stopped: time limit reached');
+            const upload = uploadImage(dataUrl, !!type.transparentOut);
+            upload.catch(() => {});   // a dropped (low-score) attempt must not raise an unhandled rejection
+            const score = wantFace ? await checkFace(inputs.face, b64Of(dataUrl), ctrl) : null;
+            dataUrl = null;   // only the Blob inside the upload stays alive now
+            if (!best || (score ?? 0) > (best.score ?? 0)) best = { score, upload };
             if (score === null || score >= RUNTIME.match_threshold) break;
         }
-        const cfg = settingsRef.current;
-        const isTransparent = TASK_TYPES[task.task_type].transparentOut;
-        let fullDataUrl = best.image.dataUrl;
-        let compressedDataUrl = isTransparent ? fullDataUrl : await shrinkDataUrl(fullDataUrl);
-        if (!cfg.cloudinary_enabled && !cfg.imgbb_enabled) {
-            fullDataUrl = null;
-            compressedDataUrl = null;
-            best = null;
-            throw new Error('Admin ne upload band kar rakha hai');
-        }
-        let cloud = null;
-        let imgbb = null;
-        const uploads = [];
-        if (cfg.cloudinary_enabled) uploads.push(uploadDataUrlToCloudinary(compressedDataUrl, cfg).then(u => { cloud = u; }).catch(() => {}));
-        if (cfg.imgbb_enabled) uploads.push(uploadToImgbb(fullDataUrl, cfg.imgbb_api_key).then(u => { imgbb = u; }).catch(() => {}));
-        await Promise.all(uploads);
-
-        const score = best.score;
-        // Task upload complete: Release large base64 buffers immediately to keep RAM low
-        fullDataUrl = null;
-        compressedDataUrl = null;
-        if (best.image) best.image.dataUrl = null;
-        best = null;
-
-        if (!cloud && !imgbb) throw new Error('Upload nahi hua: dono service fail');
-        return { cloud, imgbb, score };
+        if (ctrl?.aborted) throw new Error('Task stopped: time limit reached');
+        const { image } = await best.upload;
+        return { image, score: best.score };
     };
 
-    // A failed task: try again later while attempts are left, otherwise mark it failed.
-    // A bad key pauses the worker at once. 5 failures in a row also pause it.
     const autoPause = async (reason) => {
         if (pausedRef.current) return;
         pausedRef.current = true;
         setPaused(true);
         if (sbRef.current && workerIdRef.current) {
             try {
-                await sbRef.current.rpc(API.AUTO_PAUSE, { p_worker_id: workerIdRef.current, p_reason: reason });
+                await workerCall(sbRef.current, 'POST', '/api/worker/auto-pause', { reason });
             } catch (err) {
                 console.warn('AutoPause error:', err);
             }
         }
-        log(tl('Worker khud pause ho gaya: ', 'Worker paused itself: ') + reason);
+        log('Worker paused itself: ' + reason);
     };
 
     const failTask = async (task, err) => {
         const msg = err?.message || 'Unknown error';
-        const keyProblem = /HTTP 40[13]|API key|API_KEY|PERMISSION_DENIED/i.test(msg);
+        const keyProblem = /HTTP 40[13]|API_KEY_INVALID|API key (not valid|invalid|expired)|PERMISSION_DENIED/i.test(msg);
         const isValidationError = /chahiye|Task type galat|DB mein nahi|Prompt khali/i.test(msg);
         const cfg = settingsRef.current;
         const attempts = (task.attempts || 0) + 1;
 
-        // Task fail hone par worker ko KABHI BHI auto-pause nahi karna hai (Worker hamesha non-stop chalta rahega)
         if (keyProblem) {
             log(`Task #${task.id} warning: Key problem (${msg.slice(0, 70)})`);
         }
 
-        // Validation errors (missing photos/prompts) permanent hain, inko repeat karne ka fayda nahi
         if (!keyProblem && !isValidationError && attempts < cfg.max_attempts) {
             const delaySec = cfg.retry_delay_sec || 30;
             const nextRun = new Date(Date.now() + delaySec * 1000).toISOString();
             retryAfterMap.current.set(task.id, Date.now() + delaySec * 1000);
             await complete(task.id, { status: 'pending', attempts, next_run_at: nextRun, error: msg });
-            log(tl(`Task #${task.id}: fail, ${delaySec} second baad dobara (${attempts}/${cfg.max_attempts}): ${msg}`, `Task #${task.id}: failed, retrying in ${delaySec} seconds (${attempts}/${cfg.max_attempts}): ${msg}`));
+            log(`Task #${task.id}: failed, retrying in ${delaySec} seconds (${attempts}/${cfg.max_attempts}): ${msg}`);
         } else {
             retryAfterMap.current.delete(task.id);
             await complete(task.id, { status: 'failed', attempts, error: msg });
@@ -1073,15 +1186,11 @@ export default function AiStudioWorker() {
         const recycleLimit = Number(settingsRef.current.worker_recycle_after_tasks) || 50;
 
         if (currentDone >= recycleLimit) {
-            log(tl(`[Auto-Recycle] ${currentDone}/${recycleLimit} tasks complete ho gaye! Logs aur cache clear karke fresh page reload hoga...`, `[Auto-Recycle] ${currentDone}/${recycleLimit} tasks completed! Clearing logs and cache, then reloading the page fresh...`));
-            // 1. Activity Logs clear
+            log(`[Auto-Recycle] ${currentDone}/${recycleLimit} tasks completed! Clearing logs and cache, then reloading the page fresh...`);
             setLogs([]);
-            // 2. Memory & Image Caches purge
             purgeAllMemory();
-            // 3. Reset session counter
             sessionTasksDoneRef.current = 0;
             setSessionTasksDone(0);
-            // 4. Fresh page reload taaki page hamesha smooth & fresh rahe
             setTimeout(() => {
                 if (inFlight.current.size === 0) {
                     window.location.reload();
@@ -1090,8 +1199,28 @@ export default function AiStudioWorker() {
         }
     };
 
-    // Run one claimed task from start to finish
-    const processTask = async (task) => {
+    // Time limit for one task: dynamic based on photo count (e.g. 50 photos = ~15 min, 1 photo = 5 min)
+    const timeoutFor = (task) => {
+        const cfg = settingsRef.current;
+        const base = Math.max(300, Number(cfg.task_timeout_sec) || 300);
+        const type = TASK_TYPES[task.task_type];
+        const maxBatch = cfg.photos_per_task_max || 50;
+        const photos = type?.perPhoto
+            ? Math.min((task.extra_image_urls || []).filter(Boolean).length, maxBatch)
+            : Math.min(Math.max(task.batch_count || 1, 1), maxBatch);
+
+        if (photos > 1) {
+            const parallel = type?.perPhoto ? PER_PHOTO_PARALLEL : Math.max(1, dynamicGeminiConcurrencyRef.current);
+            const rounds = Math.ceil(Math.max(photos, 1) / parallel);
+            // Dynamic timeout: 5 min base + 85s per round of parallel photos
+            // For 50 photos with 8 parallel = 7 rounds * 85s + 300s = 895s (~15 mins)
+            const dynamicSec = (rounds * SECONDS_PER_ROUND) + base;
+            return Math.min(MAX_TASK_TIMEOUT_SEC, dynamicSec) * 1000;
+        }
+        return base * 1000;
+    };
+
+    const processTask = async (task, ctrl = { aborted: false, deadline: Infinity }) => {
         const client = sbRef.current;
         const appLabel = (task.app_id || 'weargen').toUpperCase();
         let inputs = {};
@@ -1109,38 +1238,12 @@ export default function AiStudioWorker() {
             }
             if (type.promptRequired && !(task.prompt || '').trim()) throw new Error('Prompt chahiye');
 
-            // Chat: wait until earlier messages of the same conversation are finished
             let history = [];
-            if (task.task_type === 'chat' && task.conversation_id) {
-                const { data: waiting, error: waitErr } = await client.from(TABLES.TASKS)
-                    .select('id')
-                    .eq('conversation_id', task.conversation_id)
-                    .lt('id', task.id)
-                    .in('status', ['pending', 'processing'])
-                    .limit(1);
-                if (waitErr) throw waitErr;
-                if (waiting?.length) {
-                    await complete(task.id, { status: 'pending' });   // give it back, try again later
-                    log(tl(`Task #${task.id}: pichhle message ka wait`, `Task #${task.id}: waiting for the previous message`));
-                    return;
-                }
-                const { data, error } = await client.from(TABLES.TASKS)
-                    .select('prompt, output_text')
-                    .eq('conversation_id', task.conversation_id)
-                    .eq('status', 'done')
-                    .lt('id', task.id)
-                    .order('id', { ascending: true });
-                if (error) throw error;
-                history = data || [];
-            }
-
-            // Load the reference images in parallel
             inputs = {};
             const keys = type.inputs;
             const loaded = await Promise.all(keys.map(k => urlToBase64(task[INPUT_COLUMN[k]])));
             keys.forEach((k, i) => { inputs[k] = loaded[i]; });
             if (type.extras && !type.perPhoto && task.extra_image_urls?.length) {
-                // Empty slots (family photo) are skipped; the rest keep their order
                 inputs.extras = await Promise.all(task.extra_image_urls.filter(Boolean).map(urlToBase64));
             }
 
@@ -1148,61 +1251,61 @@ export default function AiStudioWorker() {
                 const result = await askModel({ ...task, history }, inputs);
                 await complete(task.id, { status: 'done', output_text: result.text });
                 onTaskCompletedSuccess();
-                log(tl(`[${appLabel}] Task #${task.id}: text response tayyar`, `[${appLabel}] Task #${task.id}: text response ready`));
+                log(`[${appLabel}] Task #${task.id}: text response ready`);
                 return;
             }
 
-            // Photos one by one: each uploaded photo (up to 10) gets the same prompt, so one result per photo
             if (type.perPhoto) {
                 const maxBatch = settingsRef.current?.photos_per_task_max || 50;
                 const photosIn = (task.extra_image_urls || []).filter(Boolean).slice(0, maxBatch);
-                const done = await Promise.allSettled(photosIn.map(async (url) => {
-                    const b64 = await urlToBase64(url);
-                    return makePhoto(task, { extras: [b64] });
-                }));
-                const made = done.filter(r => r.status === 'fulfilled').map(r => r.value);
-                if (made.length === 0) throw new Error(done[0]?.reason?.message || 'Koi photo nahi bani');
-                const cloudOut = made.map(p => p.cloud).filter(Boolean);
-                const imgbbOut = made.map(p => p.imgbb).filter(Boolean);
+                ctrl.partialResults = [];
+                // Stop starting new photos 60s before timeout so in-flight photos finish safely
+                const stopStarting = () => ctrl.aborted || Date.now() > (ctrl.deadline - FINISH_MARGIN_MS);
+                const done = await mapSettledLimit(photosIn, PER_PHOTO_PARALLEL, async (url) => {
+                    if (ctrl.aborted) throw new Error('Task stopped: time limit reached');
+                    const b64 = await urlToBase64(url, { cache: false });
+                    if (ctrl.aborted) throw new Error('Task stopped: time limit reached');
+                    const photo = await makePhoto(task, { extras: [b64] }, ctrl);
+                    ctrl.partialResults.push(photo);
+                    return photo;
+                }, stopStarting);
+                const made = ctrl.partialResults.length > 0 ? ctrl.partialResults : done.filter(r => r && r.status === 'fulfilled').map(r => r.value);
+                const skipped = photosIn.length - made.length;
+                if (made.length === 0) throw new Error(done.find(r => r)?.reason?.message || 'Koi photo nahi bani');
+                const images = made.map(p => p.image).filter(Boolean);
                 await complete(task.id, {
                     status: 'done',
-                    output_image_url: cloudOut[0] || imgbbOut[0] || null,
-                    output_image_urls: cloudOut,
-                    imgbb_image_urls: imgbbOut,
-                    face_match_score: null
+                    images,
+                    ...(skipped > 0 ? { error: `Partial: ${made.length}/${photosIn.length} photos ready (${skipped} skipped due to time limit)` } : {})
                 });
                 onTaskCompletedSuccess();
-                log(tl(`Task #${task.id}: ${made.length} / ${photosIn.length} photo bani`, `Task #${task.id}: ${made.length} / ${photosIn.length} photos made`));
+                log(`[${appLabel}] Task #${task.id}: ${made.length}/${photosIn.length} photos made${skipped > 0 ? ` (${skipped} skipped: time limit)` : ''}`);
                 return;
             }
 
-            // Image tasks: batch_count photos (up to the settings limit), all made in parallel
             const count = Math.min(Math.max(task.batch_count || 1, 1), settingsRef.current.photos_per_task_max);
-            // Each photo is independent. A photo that fails does not cancel the others.
-            // Product angles: each photo of the batch gets the next angle
             const settled = await Promise.allSettled(Array.from({ length: count }, (_, idx) =>
-                makePhoto(type.angles ? { ...task, angle: type.angles[idx % type.angles.length] } : task, inputs)));
+                makePhoto(type.angles ? { ...task, angle: type.angles[idx % type.angles.length] } : task, inputs, ctrl)));
             const photos = settled.filter(r => r.status === "fulfilled").map(r => r.value);
             const failedPhotos = settled.filter(r => r.status === "rejected");
-            // The whole task fails only when no photo came out at all
             if (photos.length === 0) throw new Error(failedPhotos[0]?.reason?.message || "Koi photo nahi bani");
-            if (failedPhotos.length) log(tl(`Task #${task.id}: ${failedPhotos.length} photo fail, ${photos.length} save hui`, `Task #${task.id}: ${failedPhotos.length} photos failed, ${photos.length} saved`));
-            const cloudUrls = photos.map(p => p.cloud).filter(Boolean);
-            const imgbbUrls = photos.map(p => p.imgbb).filter(Boolean);
-            const scores = photos.map(p => p.score).filter(s => s != null);
+            if (failedPhotos.length) log(`Task #${task.id}: ${failedPhotos.length} photos failed, ${photos.length} saved`);
+            const images = photos.map(p => p.image).filter(Boolean);
+            const scores = photos.map(p => p.score).filter(sc => sc != null);
             await complete(task.id, {
                 status: 'done',
-                output_image_url: cloudUrls[0] || imgbbUrls[0] || null,
-                output_image_urls: cloudUrls,
-                imgbb_image_urls: imgbbUrls,
+                images,
                 face_match_score: scores.length ? Math.max(...scores) : null
             });
+            cleanTaskCache(task);
+            if (inputs) {
+                for (const k in inputs) { inputs[k] = null; }
+            }
             onTaskCompletedSuccess();
-            log(`[${appLabel}] Task #${task.id}: ${photos.length} photo (Cloudinary ${cloudUrls.length}, ImgBB ${imgbbUrls.length})`);
+            log(`[${appLabel}] Task #${task.id}: ${photos.length} photo ready`);
         } catch (err) {
             await failTask(task, err);
         } finally {
-            // Task complete ho gaya (ImgBB/Cloudinary + DB done) -> Cache & Base64 memory free karo
             cleanTaskCache(task);
             if (inputs) {
                 for (const k in inputs) { inputs[k] = null; }
@@ -1211,7 +1314,6 @@ export default function AiStudioWorker() {
         }
     };
 
-    // Looks for work and gives it to the task limiter (it keeps at most task_concurrency running)
     const kick = async () => {
         const client = sbRef.current;
         if (!client || !workerIdRef.current || pausedRef.current || drainRef.current) return;
@@ -1221,17 +1323,10 @@ export default function AiStudioWorker() {
         const baseLimit = Math.max(1, Number(settingsRef.current.task_concurrency) || 10);
         const maxLimit = dynamicTaskConcurrencyRef.current;
         if (inFlight.current.size >= maxLimit) return;   // no free slot: do not ask the DB
-        setLastDbFetch(new Date().toLocaleTimeString());
-        setNextDbSec(refreshIntervalSec);
+        const mem = getMemoryStats();
+        if (mem.supported && mem.usedMB > MAX_HEAP_MB_FOR_PICKUP && inFlight.current.size > 0) return;   // RAM high: let running tasks finish first
         try {
-            const stale = new Date(Date.now() - RUNTIME.stale_ms).toISOString();
-            const { data, error } = await client.rpc(API.GET_PENDING, { p_worker_id: workerIdRef.current, p_stale_before: stale, p_limit: 40 });
-            if (error) throw error;
-            const pendingTasks = data || [];
-
-            // ⚡ DYNAMIC AUTO-SCALER TURBO LOGIC (< 1 minute latency guarantee)
-            // If rush traffic arrives (>= 4 tasks waiting or active load high):
-            const rushDetected = pendingTasks.length >= 4 || inFlight.current.size >= 8;
+            const rushDetected = inFlight.current.size >= 8;
             if (rushDetected && dynamicTaskConcurrencyRef.current < 20) {
                 dynamicTaskConcurrencyRef.current = 20;
                 dynamicGeminiConcurrencyRef.current = 16;
@@ -1240,36 +1335,59 @@ export default function AiStudioWorker() {
                 taskLimiter.pump?.();
                 geminiLimiter.pump?.();
                 log('⚡ [Auto-Scale Turbo Active] Queue rush detected! Scaled worker limit from 10 -> 20 parallel tasks (Gemini: 16) to ensure < 1 min clearance.');
-            } else if (!rushDetected && pendingTasks.length <= 1 && inFlight.current.size <= 5 && dynamicTaskConcurrencyRef.current > baseLimit) {
-                // Cool down to normal limit once backlog is cleared
+            } else if (!rushDetected && inFlight.current.size <= 5 && dynamicTaskConcurrencyRef.current > baseLimit) {
                 dynamicTaskConcurrencyRef.current = baseLimit;
                 dynamicGeminiConcurrencyRef.current = Math.min(8, Number(settingsRef.current.gemini_concurrency) || 8);
                 setIsTurboMode(false);
                 setCurrentConcurrency(baseLimit);
                 log(`🌿 [Auto-Scale Normal] Queue cleared. Worker limit normalized to ${baseLimit} parallel tasks.`);
             }
-
-            for (const task of pendingTasks) {
-                if (inFlight.current.size >= dynamicTaskConcurrencyRef.current) break;
-                if (inFlight.current.has(task.id)) continue;
-                if (retryAfterMap.current.has(task.id) && Date.now() < retryAfterMap.current.get(task.id)) continue;
-                if ((settingsRef.current.disabled_models || []).includes(task.model)) continue;
-                inFlight.current.add(task.id);
+            while (inFlight.current.size < dynamicTaskConcurrencyRef.current) {
+                const task = await claimNext(client);
+                if (!task) break;
+                if ((settingsRef.current.disabled_models || []).includes(task.model)) {
+                    await complete(task.id, { status: 'pending', error: 'Model admin ne band kiya hai' });
+                    break;
+                }
+                inFlight.current.add(task.id);                inFlight.current.add(task.id);
                 setRunning(inFlight.current.size);
+                const ctrl = { aborted: false, deadline: Infinity, partialResults: [] };
                 taskLimiter(async () => {
                     try {
-                        if (!pausedRef.current && await claim(task.id)) {
-                            log(tl(`Task #${task.id} mila (${task.task_type}, ${task.model})`, `Task #${task.id} received (${task.task_type}, ${task.model})`));
-                            await withTimeout(processTask({ ...task, status: 'processing' }), (settingsRef.current.task_timeout_sec || 300) * 1000);
+                        if (!pausedRef.current) {
+                            log(`Task #${task.id} received (${task.task_type}, ${task.model})`);
+                            const ms = timeoutFor(task);
+                            ctrl.deadline = Date.now() + ms;
+                            await withTimeout(processTask({ ...task, status: 'processing' }, ctrl), ms);
                         }
                     } catch (err) {
-                        if (/^Timeout:/.test(err.message)) await failTask(task, err);
+                        ctrl.aborted = true;   // Leftover photos of this task stop immediately; no more Gemini calls
+
+                        // If timeout occurred but partial photos were completed, save as done!
+                        const partial = ctrl.partialResults || [];
+                        if (/^Timeout:/.test(err.message) && partial.length > 0) {
+                            try {
+                                await complete(task.id, {
+                                    status: 'done',
+                                    images: partial.map(p => p.image).filter(Boolean),
+                                    face_match_score: null
+                                });
+                                onTaskCompletedSuccess();
+                                log(`Task #${task.id}: Saved ${partial.length} completed photos on timeout. Marked done.`);
+                                return;
+                            } catch (partialErr) {
+                                log(`Task #${task.id}: Partial save error: ${partialErr.message}`);
+                            }
+                        }
+
+                        if (/^Timeout:/.test(err.message)) {
+                            await failTask(task, err);
+                        }
                         else log('Claim error: ' + err.message);
                     } finally {
                         inFlight.current.delete(task.id);
                         setRunning(inFlight.current.size);
-                        if (drainRef.current && inFlight.current.size === 0) log(tl('Drain complete: ab is tab ko band kar sakte ho', 'Drain complete: you can close this tab now'));
-                        // Instant slot fill: immediately check for remaining tasks without waiting 2 seconds
+                        if (drainRef.current && inFlight.current.size === 0) log('Drain complete: you can close this tab now');
                         if (!pausedRef.current && !drainRef.current && inFlight.current.size < dynamicTaskConcurrencyRef.current) {
                             kickRef.current();
                         }
@@ -1282,7 +1400,6 @@ export default function AiStudioWorker() {
     };
     kickRef.current = kick;
 
-    // Refresh: reload the config and the lists, and look for tasks again
     const refreshAll = async () => {
         const c = sbRef.current;
         if (c) await loadSettings(c);
@@ -1299,17 +1416,31 @@ export default function AiStudioWorker() {
             const client = lib.createClient(targetUrl, apiKey);
             log(`Connecting to ${client.apiUrl}...`);
 
-            // Unique worker id from the DB (worker_1, worker_2 ...). The same tab keeps its id.
             const wanted = sessionStorage.getItem('ai_studio_worker_id');
-            const { data, error } = await client.rpc(API.REGISTER_WORKER, { p_wanted: wanted });
-            if (error) throw error;
-            sessionStorage.setItem('ai_studio_worker_id', data);
-            workerIdRef.current = data;
+            let enrollKey = '';
+            try { enrollKey = (localStorage.getItem(WORKER_KEY_STORAGE) || '').trim(); } catch { }
+            const regRes = await fetch(`${client.apiUrl}/api/worker/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(enrollKey ? { 'X-Api-Key': enrollKey } : {})
+                },
+                body: JSON.stringify({ wanted: wanted || null })
+            });
+            const data = await regRes.json().catch(() => null);
+            if (!regRes.ok) throw new Error(data?.error || `Worker registration failed (HTTP ${regRes.status})`);
+            const newId = data?.worker_id;
+            if (!newId) throw new Error('Worker registration failed: no worker_id returned');
+            if (data.worker_token) {
+                try { sessionStorage.setItem(WORKER_TOKEN_STORAGE, data.worker_token); } catch { }
+            }
+            sessionStorage.setItem('ai_studio_worker_id', newId);
+            workerIdRef.current = newId;
             sbRef.current = client;
-            setWorkerId(data);
+            setWorkerId(newId);
             await loadSettings(client);
             setSb(client);
-            log(`Connected as ${data}`);
+            log(`Connected as ${newId}`);
         } catch (err) {
             sbRef.current = null;
             log('Connect error: ' + err.message);
@@ -1318,15 +1449,18 @@ export default function AiStudioWorker() {
         }
     };
 
-    // Everything that happens while connected: heartbeat, realtime, safety-net refresh, and release on close
     useEffect(() => {
         if (!sb) return;
 
         const heartbeat = async () => {
             const w = workerIdRef.current;
             if (!w) return;
-            const { data, error } = await sb.rpc(API.HEARTBEAT, { p_worker_id: w });
-            if (error) return;
+            const hbRes = await fetch(`${sb.apiUrl}/api/worker/heartbeat`, {
+                method: 'POST',
+                headers: workerAuthHeader()
+            });
+            if (!hbRes.ok) return;
+            const data = await hbRes.json().catch(() => null);
             const isPaused = !!data?.paused;
             drainRef.current = !!data?.drain;
             setDrain(!!data?.drain);
@@ -1334,27 +1468,25 @@ export default function AiStudioWorker() {
             setPaused(isPaused);
         };
 
-        // A burst of task changes becomes one refresh (1 s)
         let refreshTimer = null;
         const scheduleRefresh = () => {
             clearTimeout(refreshTimer);
-            refreshTimer = setTimeout(() => { refreshRef.current(); kickRef.current(); }, 3000);
+            refreshTimer = setTimeout(() => { refreshRef.current(); kickRef.current(); }, 300);
         };
 
         heartbeat();
         refreshRef.current();
         kickRef.current();
         const stopHb = everyMs(heartbeat, () => RUNTIME.heartbeat_ms);
-        const stopFb = everyMs(() => { refreshRef.current(); kickRef.current(); }, () => RUNTIME.fallback_ms);
+        const stopFb = everyMs(() => refreshRef.current(), () => RUNTIME.fallback_ms);
+        const stopKick = everyMs(() => kickRef.current(), () => Math.min(1000, RUNTIME.fallback_ms));
 
         let channel = null;
         if (USE_REALTIME) try {
         channel = sb.channel('ai-studio-worker-' + workerIdRef.current)
-            // Only a new task wakes the worker. Its own status updates (processing, done) do not cause a call.
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: TABLES.TASKS }, () => scheduleRefresh())
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: TABLES.WORKERS }, (payload) => {
                 if (payload.new?.worker_id !== workerIdRef.current) return;
-                // The admin changed this worker's limit (task_limit): read the settings again, once
                 const limit = payload.new.task_limit ?? null;
                 if (limit !== seenLimitRef.current) {
                     seenLimitRef.current = limit;
@@ -1374,34 +1506,22 @@ export default function AiStudioWorker() {
             .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.MODELS }, () => loadSettings(sb))
             .subscribe();
         } catch (err) {
-            // No realtime here (for example, a sandboxed preview): the timers still keep the worker going
-            log(tl('Realtime band hai, timer se chalega: ', 'Realtime is off, running on the timer: ') + err.message);
+            log('Realtime is off, running on the timer: ' + err.message);
         }
 
-        // Tab closing: free this worker's tasks right away
-        const release = () => {
-            const w = workerIdRef.current;
-            if (!w) return;
-            const targetUrl = sbRef.current?.apiUrl || API_URL;
-            fetch(`${targetUrl}/rest/v1/rpc/${API.RELEASE_WORKER}`, {
-                method: 'POST',
-                keepalive: true,
-                headers: { 'Bypass-Tunnel-Reminder': 'true', apikey: apiKey, Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ p_worker_id: w })
-            });
-        };
+        const release = () => {};   // leases expire on their own (300 s); nothing to send
         window.addEventListener('pagehide', release);
 
         return () => {
             stopHb();
             stopFb();
+            stopKick();
             clearTimeout(refreshTimer);
             if (channel) sb.removeChannel(channel);
             window.removeEventListener('pagehide', release);
         };
     }, [sb, apiKey]);
 
-    // Connects by itself: when the page opens, and again every 15 s until it is connected (needs the Gemini key in this browser)
     useEffect(() => {
         const tryConnect = () => { if (!sbRef.current) connect(); };
         tryConnect();
@@ -1413,216 +1533,166 @@ export default function AiStudioWorker() {
     const statusStyle = !sb ? 'bg-stone-800 text-stone-300 border-white/10' : paused ? 'bg-rose-500/10 text-rose-300 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
 
     return (
-        <div className="min-h-screen bg-stone-950 text-stone-100 p-4 sm:p-6 space-y-5">
+        <div className="min-h-screen bg-[#0a0a0a] text-slate-100 font-sans p-4 sm:p-6 space-y-5">
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-yellow-400 flex items-center justify-center">
-                        <Cpu className="w-5 h-5 text-stone-950" />
+                    <div className="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center">
+                        <Ico n="cpu" className="w-5 h-5 text-stone-950" />
                     </div>
                     <div>
-                        <h1 className="text-lg font-extrabold">AI Studio <span className="text-yellow-300">Worker</span></h1>
-                        <p className="text-[11px] text-stone-400">{t('Task uthata hai, model chalata hai, photo ImgBB + Cloudinary par upload karke save karta hai', 'Picks up a task, runs the model, uploads the photo to ImgBB + Cloudinary and saves the result')}</p>
+                        <h1 className="text-lg font-extrabold">AI Studio <span className="text-amber-300">Worker</span></h1>
+                        <p className="text-[11px] text-stone-400">{'Picks up a task, runs the model, uploads the photo to ImgBB + Cloudinary and saves the result'}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                     {/* Dynamic Auto-Scale Concurrency Badge */}
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all ${
-                        isTurboMode
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.3)]'
-                            : 'bg-stone-900 text-stone-300 border-white/10'
-                    }`} title={isTurboMode ? '⚡ Turbo Auto-Scaler Active: 20 parallel tasks running to complete requests in under 1 minute!' : '🟢 Normal Mode: Standard parallel processing'}>
-                        <span>{isTurboMode ? '⚡ TURBO: 20 Parallel (<1m)' : `⚡ Parallel: ${currentConcurrency}`}</span>
-                    </div>
-
-                    {/* Session Tasks Progress Badge */}
-                    <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-stone-900 border border-white/10 text-xs font-mono" title="Worker auto-recycle limit from DB">
-                        <span className="text-stone-400">Tasks:</span>
-                        <strong className="text-yellow-300">{sessionTasksDone}/{settings.worker_recycle_after_tasks || 50}</strong>
-                    </div>
-                    {/* RAM Live Monitor Badge & Purge Button */}
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 border border-white/10 text-xs font-mono">
-                        <span className={`w-2 h-2 rounded-full ${memStats.usedMB > 150 ? 'bg-rose-500 animate-ping' : memStats.usedMB > 80 ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
-                        <span>RAM: <strong className={memStats.usedMB > 150 ? 'text-rose-400' : 'text-stone-200'}>{memStats.supported ? `${memStats.usedMB} MB` : 'Normal'}</strong></span>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                purgeAllMemory();
-                                const fresh = getMemoryStats();
-                                setMemStats(fresh);
-                                log(tl('RAM & Cache memory saaf kar di gayi', 'RAM and cache memory cleared'));
-                            }}
-                            title={t('RAM aur Caches abhi saaf karein', 'Clear RAM and caches now')}
-                            className="ml-1 text-[10px] text-yellow-300 hover:text-yellow-200 underline font-sans font-bold"
-                        >
-                            Purge
-                        </button>
-                    </div>
-                    <button onClick={refreshAll} title="Refresh" className="h-9 w-9 flex items-center justify-center rounded-xl border border-white/10 bg-stone-900 text-stone-300"><RefreshCw className="w-4 h-4" /></button>
-                    {!sb && <button onClick={connect} disabled={!!sb} className="h-9 px-4 rounded-xl bg-yellow-400 text-stone-950 font-black disabled:opacity-40">Connect</button>}
-                    <span className="font-mono font-bold text-yellow-300">{workerId || '—'}</span>
-                    <span className={`px-2.5 py-1 rounded-lg border font-bold ${statusStyle}`}>{status}</span>
-                    <LangToggle />
-                </div>
-            </header>
-
-                        {/* ⚙️ Top API Settings Bar */}
-            <div className="bg-stone-900 border border-yellow-400/20 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg">
-                <div className="flex items-center gap-2 flex-1 min-w-[300px]">
-                    <span className="flex items-center gap-1.5 font-bold text-yellow-300 text-xs whitespace-nowrap">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        API Endpoint:
-                    </span>
-                    <input
-                        type="text"
-                        value={customApiUrl}
-                        onChange={(e) => {
-                            const val = e.target.value.trim();
-                            setCustomApiUrl(val);
-                            try { localStorage.setItem('aistudio_api_url', val); } catch {}
-                        }}
-                        placeholder="https://aistudio.runasp.net"
-                        className="flex-1 bg-stone-950 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-yellow-400"
-                    />
-                    <button
-                        type="button"
-                        onClick={() => connect(customApiUrl)}
-                        className="px-4 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-stone-950 font-bold rounded-xl transition-all text-xs"
-                    >
-                        Save & Connect
-                    </button>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-stone-400">
-                    <span>Default:</span>
                     <button
                         type="button"
                         onClick={() => {
-                            const u = "https://aistudio.runasp.net";
-                            setCustomApiUrl(u);
-                            try { localStorage.setItem('aistudio_api_url', u); } catch {}
-                            connect(u);
+                            purgeAllMemory();
+                            setMemStats(getMemoryStats());
+                            log('RAM and cache memory cleared');
                         }}
-                        className="font-mono text-yellow-300 hover:underline font-bold"
+                        title="Clear RAM and caches now"
+                        className="h-9 px-4 rounded-xl bg-rose-500 text-white text-xs font-extrabold shadow-lg"
                     >
-                        https://aistudio.runasp.net
+                        Purge
                     </button>
+                    <button onClick={refreshAll} title="Refresh" className="h-9 w-9 flex items-center justify-center rounded-xl border border-white/10 bg-[#161616] text-stone-300"><Ico n="refresh" className="w-4 h-4" /></button>
+                    {!sb && <button onClick={connect} disabled={!!sb} className="h-9 px-4 rounded-xl bg-amber-400 text-stone-950 font-black disabled:opacity-40">Connect</button>}
+                    <span className="font-mono font-bold text-amber-300">{workerId || '—'}</span>
+                    <span className={`px-2.5 py-1 rounded-lg border font-bold ${statusStyle}`}>{status}</span>
                 </div>
-            </div>
+            </header>
+
+            <>
 
             {/* Numbers */}
             <section className="grid gap-3 grid-cols-2 sm:grid-cols-6">
                 {[
-                    [t('Abhi chal rahe', 'Running now'), running],
+                    ['Running now', running],
                     ['Done', myCounts.done ?? '—'],
                     ['Failed', myCounts.failed ?? '—'],
-                    [t('Ek saath tasks', 'Tasks at once'), isTurboMode ? `${currentConcurrency} (⚡ Turbo)` : currentConcurrency],
+                    ['Tasks at once', isTurboMode ? `${currentConcurrency} (⚡ Turbo)` : currentConcurrency],
                     ['Memory (RAM)', memStats.supported ? `${memStats.usedMB} MB` : `${inputCache.size} Cache`],
                     ['Recycle (Done/Limit)', `${sessionTasksDone} / ${settings.worker_recycle_after_tasks || 50}`]
                 ].map(([label, value]) => (
-                    <div key={label} className="bg-stone-900 border border-white/10 rounded-2xl p-4">
+                    <div key={label} className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-4">
                         <p className="text-[11px] text-stone-400">{label}</p>
                         <p className="text-2xl font-extrabold font-mono text-stone-100">{value}</p>
                     </div>
                 ))}
             </section>
-            <p className="text-[11px] text-stone-500">Upload: {settings.cloudinary_enabled ? 'Cloudinary ON' : 'Cloudinary OFF'} · {settings.imgbb_enabled ? 'ImgBB ON' : 'ImgBB OFF'} {t('(admin se)', '(set by admin)')}</p>
-            <p className="text-[11px] text-stone-500">{t('Model calls ek saath:', 'Model calls at once:')} {isTurboMode ? 16 : settings.gemini_concurrency} · Photos per task: {settings.photos_per_task_max} · ⚡ Auto-Scaler: {t('Rush par limit automatic 20 ho jati hai (< 1 min response guarantee)', 'Under rush, the limit goes up to 20 automatically (< 1 min response guarantee)')}</p>
 
-            {drain && <p className="text-xs text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-xl px-3 py-2">{t('Drain mode: naya task nahi lega, chal rahe tasks khatam honge.', 'Drain mode: no new tasks will be taken; running tasks will finish.')}</p>}
-            {settings.budget_left != null && <p className="text-[11px] text-stone-400">{t('Aaj ka bacha Gemini budget:', 'Gemini budget left today:')} {settings.budget_left}</p>}
-            {settings.disabled_models?.length > 0 && <p className="text-[11px] text-stone-400">{t('Band models:', 'Disabled models:')} {settings.disabled_models.join(', ')}</p>}
+            {drain && <p className="text-xs text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-xl px-3 py-2">{'Drain mode: no new tasks will be taken; running tasks will finish.'}</p>}
+            {settings.budget_left != null && <p className="text-[11px] text-stone-400">{'Gemini budget left today:'} {settings.budget_left}</p>}
+            {settings.disabled_models?.length > 0 && <p className="text-[11px] text-stone-400">{'Disabled models:'} {settings.disabled_models.join(', ')}</p>}
             {!paused && (
                 <button type="button" onClick={() => autoPause('Worker ne khud pause kiya (screen se)')} className="h-9 px-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-200 text-xs font-bold">
-                    {t('Pause karo (naya task mat lo)', 'Pause (take no new tasks)')}
+                    {'Pause (take no new tasks)'}
                 </button>
             )}
             {paused && (
                 <p className="text-xs text-rose-200 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" /> {t('Ye worker pause hai. Naya task nahi lega, jo chal raha hai wo complete hoga. Wapas chalu karne ke liye admin ke Workers screen se Resume karein.', 'This worker is paused. It will not take new tasks; running tasks will finish. To resume, click Resume on the admin Workers screen.')}
+                    <Ico n="alert" className="w-4 h-4" /> {'This worker is paused. It will not take new tasks; running tasks will finish. To resume, click Resume on the admin Workers screen.'}
                 </p>
             )}
 
             {/* My tasks: a table with tabs and pages (loaded on click only) */}
             <section className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-sm font-extrabold flex items-center gap-2"><ImageIcon className="w-4 h-4 text-yellow-300" /> {t('Is worker ke tasks', "This worker's tasks")}</h2>
-                    <div className="flex gap-1.5">
+                    <h2 className="text-sm font-extrabold flex items-center gap-2"><Ico n="image" className="w-4 h-4 text-amber-300" /> {"This worker's tasks"}</h2>
+                    <div className="flex gap-1.5 items-center">
                         {[['pending', 'Pending'], ['processing', 'Processing'], ['done', 'Completed'], ['failed', 'Failed']].map(([key, label]) => (
-                            <button key={key} type="button" onClick={() => pickTab(key)} className={`h-8 px-3 rounded-lg text-xs font-bold border ${myTab === key ? 'bg-yellow-400 text-stone-950 border-yellow-300' : 'bg-stone-900 border-white/10 text-stone-300'}`}>{label}{myCounts[key] != null ? ` (${myCounts[key]})` : ''}</button>
+                            <button key={key} type="button" onClick={() => pickTab(key)} className={`h-8 px-3 rounded-lg text-xs font-bold border ${myTab === key ? 'bg-amber-400 text-stone-950 border-amber-300' : 'bg-[#161616] border-white/10 text-stone-300'}`}>{label}{myCounts[key] != null ? ` (${myCounts[key]})` : ''}</button>
                         ))}
+                        {myTab === 'failed' && (myCounts.failed > 0 || myRows.length > 0) && (
+                            <button
+                                type="button"
+                                onClick={clearAllFailed}
+                                className="h-8 px-2.5 rounded-lg text-xs font-bold border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 flex items-center gap-1.5"
+                                title="Saare failed tasks DB se delete karein"
+                            >
+                                <Ico n="trash" className="w-3.5 h-3.5" /> Clear Failed
+                            </button>
+                        )}
                     </div>
                 </div>
-                <div className="overflow-x-auto bg-stone-900 border border-white/10 rounded-2xl">
+                <div className="overflow-x-auto bg-[#0f0f0f] border border-white/5 rounded-2xl">
                     <table className="w-full text-xs">
-                        <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">App</th><th className="p-2">{t('Kaam', 'Task')}</th><th className="p-2">Model</th><th className="p-2">Result</th><th className="p-2">Error</th></tr></thead>
+                        <thead className="text-left text-stone-400"><tr><th className="p-2">#</th><th className="p-2">App</th><th className="p-2">{'Task'}</th><th className="p-2">Model</th><th className="p-2">Result</th><th className="p-2">Error</th><th className="p-2 text-right">Actions</th></tr></thead>
                         <tbody>
                             {myRows.map(t => (
                                 <tr key={t.id} className="border-t border-white/5 align-top">
-                                    <td className="p-2 font-mono text-yellow-300">#{t.id}</td><td className="p-2"><span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold uppercase border ${t.app_id === 'ppp' ? 'bg-purple-500/10 text-purple-300 border-purple-500/30' : 'bg-amber-400/10 text-amber-300 border-amber-400/30'}`}>{t.app_id || 'weargen'}</span></td>
+                                    <td className="p-2 font-mono text-amber-300">#{t.id}</td><td className="p-2"><span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold uppercase border ${t.app_id === 'ppp' ? 'bg-purple-500/10 text-purple-300 border-purple-500/30' : 'bg-amber-400/10 text-amber-300 border-amber-400/30'}`}>{t.app_id || 'weargen'}</span></td>
                                     <td className="p-2">{TASK_TYPES[t.task_type]?.label || t.task_type}</td>
                                     <td className="p-2 font-mono text-stone-400">{t.model}</td>
                                     <td className="p-2">{t.output_image_url && <a href={t.output_image_url} target="_blank" rel="noreferrer" className="text-emerald-300 underline mr-2">Photo</a>}{t.output_text && <span className="text-stone-200">{t.output_text.slice(0, 120)}</span>}{!t.output_image_url && !t.output_text && '—'}</td>
                                     <td className="p-2 text-rose-300">{t.error || ''}</td>
+                                    <td className="p-2 text-right">
+                                        <div className="flex items-center justify-end gap-1.5">
+                                            {(t.status === 'pending' || t.status === 'processing') && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => stopTask(t)}
+                                                    className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 text-[11px] font-bold"
+                                                    title="Stop task immediately"
+                                                >
+                                                    Stop
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => deleteTask(t)}
+                                                className="p-1.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 text-[11px]"
+                                                title="Database se permanently delete karein"
+                                            >
+                                                <Ico n="trash" className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
-                {myRows.length === 0 && <p className="text-center text-xs text-stone-500 py-6">{myCounts[myTab] == null ? t('Upar se tab chunein', 'Pick a tab above') : t('Is tab mein koi task nahi.', 'No tasks in this tab.')}</p>}
+                {myRows.length === 0 && <p className="text-center text-xs text-stone-500 py-6">{myCounts[myTab] == null ? 'Pick a tab above' : 'No tasks in this tab.'}</p>}
                 {myCounts[myTab] > MY_PAGE_SIZE && (
                     <div className="flex items-center justify-between text-xs">
-                        <button type="button" disabled={myPage === 0} onClick={() => goPage(myPage - 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-stone-900 disabled:opacity-40">{t('Pichhla', 'Previous')}</button>
+                        <button type="button" disabled={myPage === 0} onClick={() => goPage(myPage - 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-[#161616] disabled:opacity-40">{'Previous'}</button>
                         <span className="font-mono text-stone-400">Page {myPage + 1} / {Math.ceil(myCounts[myTab] / MY_PAGE_SIZE)}</span>
-                        <button type="button" disabled={(myPage + 1) * MY_PAGE_SIZE >= myCounts[myTab]} onClick={() => goPage(myPage + 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-stone-900 disabled:opacity-40">{t('Agla', 'Next')}</button>
+                        <button type="button" disabled={(myPage + 1) * MY_PAGE_SIZE >= myCounts[myTab]} onClick={() => goPage(myPage + 1)} className="h-8 px-3 rounded-lg border border-white/10 bg-[#161616] disabled:opacity-40">{'Next'}</button>
                     </div>
                 )}
             </section>
 
             {/* Console & Activity Log */}
-            <section className="bg-stone-900 border border-white/10 rounded-2xl p-4 space-y-3">
+            <section className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
                     <div className="flex items-center gap-2">
                         <h2 className="text-xs font-extrabold flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Console & Activity Log
+                            <Ico n="check" className="w-4 h-4 text-emerald-400" /> Console & Activity Log
                         </h2>
                         <span className="text-[10px] text-stone-400 font-mono">({logs.length}/30 max)</span>
                         {logs.length > 0 && (
                             <button
                                 type="button"
                                 onClick={() => setLogs([])}
-                                className="text-[10px] text-stone-400 hover:text-yellow-300 underline font-mono ml-1"
-                                title={t('Abhi log saaf karein', 'Clear the log now')}
+                                className="text-[10px] text-stone-400 hover:text-amber-300 underline font-mono ml-1"
+                                title={'Clear the log now'}
                             >
                                 Clear
                             </button>
                         )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
-                        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-semibold">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                            {t(`DB Refresh: Har ${refreshIntervalSec}s me`, `DB Refresh: every ${refreshIntervalSec}s`)}
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold">
-                            {t('Agla DB fetch:', 'Next DB fetch:')} <span className="text-yellow-300 font-bold font-mono">{nextDbSec}s</span>
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold" title="Auto-purges cache when task ends or high RAM">
-                            RAM: <span className="text-emerald-300 font-bold font-mono">{memStats.supported ? `${memStats.usedMB} MB` : 'Safe'}</span>
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-stone-800 border border-white/10 text-stone-300 font-semibold" title="Tasks before auto-recycle and fresh reload">
-                            Auto-Recycle: <span className="text-yellow-300 font-bold font-mono">{sessionTasksDone}/{settings.worker_recycle_after_tasks || 50}</span>
-                        </span>
-                        {lastDbFetch && (
-                            <span className="text-stone-400 text-[10px]">
-                                {t(`(Aakhri fetch: ${lastDbFetch})`, `(Last fetch: ${lastDbFetch})`)}
-                            </span>
-                        )}
-                    </div>
                 </div>
                 <div className="max-h-56 overflow-auto space-y-1 font-mono text-[11px] text-stone-300">
                     {logs.map((l, i) => <p key={i}><span className="text-stone-500">{l.t}</span> {l.text}</p>)}
-                    {logs.length === 0 && <p className="text-stone-500">{t('Connect karo to log yahan aayega.', 'Connect to see the log here.')}</p>}
+                    {logs.length === 0 && <p className="text-stone-500">{'Connect to see the log here.'}</p>}
                 </div>
             </section>
-            {running > 0 && <p className="text-[10px] text-stone-500 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> {t(`${running} task chal rahe hain`, `${running} tasks running`)}</p>}
+            {running > 0 && <p className="text-[10px] text-stone-500 flex items-center gap-1"><Ico n="refresh" className="w-3 h-3 animate-spin" /> {`${running} tasks running`}</p>}
+            </>
         </div>
     );
 }

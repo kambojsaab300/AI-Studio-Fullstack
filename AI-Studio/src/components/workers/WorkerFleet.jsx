@@ -1,28 +1,36 @@
 import React, { useState } from 'react';
 import { Users, Pause, Play, RefreshCw, Trash2, RotateCcw } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-import { API, TABLES } from '../../api/config';
+import { adminApi } from '../../api/adminApi';
 import { useT } from '../../i18n/lang';
 
 export function WorkerFleet() {
     const { sb, workers, workerLoad, loadWorkers, setMsg } = useAdmin();
     const t = useT();
-    const [view, setView] = useState('active'); // 'active' | 'offline' | 'all'
+    const [view, setView] = useState('active'); // 'active' (= online) | 'offline' | 'all'
 
-    const activeIds = new Set((workerLoad || []).map(l => l.worker_id));
+    // Online = heartbeat received recently (server computes w.is_online from last_seen).
+    const isOnline = (w) => !!w.is_online;
+    const onlineCount = workers.filter(isOnline).length;
 
     const filtered = workers.filter(w => {
-        const isActive = activeIds.has(w.worker_id);
-        if (view === 'active') return isActive;
-        if (view === 'offline') return !isActive;
+        if (view === 'active') return isOnline(w);
+        if (view === 'offline') return !isOnline(w);
         return true;
     });
 
     const togglePause = async (workerId, currentPaused) => {
-        const { error } = await sb.from(TABLES.WORKERS)
-            .update({ paused: !currentPaused })
-            .eq('worker_id', workerId);
-        if (error) return setMsg('Pause error: ' + error.message);
+        const resume = currentPaused;
+        const question = resume
+            ? t(`${workerId} ko ON (resume) karna hai? Ye naye tasks lena shuru karega.`, `Turn ${workerId} ON (resume)? It will start taking new tasks.`)
+            : t(`${workerId} ko OFF (pause) karna hai? Chal rahe tasks poore honge, naye tasks nahi lega.`, `Turn ${workerId} OFF (pause)? Running tasks finish, no new tasks are taken.`);
+        if (!window.confirm(question)) return;
+
+        const { error } = await adminApi.setWorkerPaused(workerId, !currentPaused, resume ? null : 'Admin ne pause kiya');
+        if (error) return setMsg((resume ? 'Resume' : 'Pause') + ' error: ' + error.message);
+        setMsg(resume
+            ? t(`✅ ${workerId} ON ho gaya (5 second mein tasks lena shuru karega)`, `✅ ${workerId} is ON (starts taking tasks within 5 seconds)`)
+            : t(`⏸️ ${workerId} OFF ho gaya`, `⏸️ ${workerId} is OFF`));
         loadWorkers();
     };
 
@@ -33,8 +41,9 @@ export function WorkerFleet() {
             : t('ke failed tasks delete karne hain', 'failed tasks will be deleted');
         if (!window.confirm(t(`${who} ${what}. Pakka karna hai?`, `${who}: ${what}. Are you sure?`))) return;
 
-        const fn = kind === 'release' ? API.RELEASE_TASKS : API.CLEAR_FAILED;
-        const { data, error } = await sb.rpc(fn, { p_worker_id: workerId || null });
+        const { data, error } = await (kind === 'release'
+            ? adminApi.releaseTasks(workerId)
+            : adminApi.clearFailed(workerId));
         if (error) return setMsg('Clean-up error: ' + error.message);
         setMsg(t(
             `${data} task ${kind === 'release' ? 'wapas pending mein gaye' : 'delete ho gaye'}`,
@@ -44,7 +53,7 @@ export function WorkerFleet() {
     };
 
     return (
-        <section className="bg-[#0b0e17] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
+        <section className="bg-[#121212] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
             {/* Header & Controls */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -55,7 +64,7 @@ export function WorkerFleet() {
                         <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
                             <span>Worker Fleet Monitor</span>
                             <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                                {activeIds.size} Online
+                                {onlineCount} Online
                             </span>
                         </h2>
                         <p className="text-xs text-stone-400">Live AI background workers processing Gemini API jobs</p>
@@ -70,7 +79,7 @@ export function WorkerFleet() {
                             onClick={() => setView('active')}
                             className={`px-3 py-1 rounded-lg transition-all ${view === 'active' ? 'bg-amber-400 text-stone-950 shadow-sm' : 'text-stone-400'}`}
                         >
-                            Active ({activeIds.size})
+                            Online ({onlineCount})
                         </button>
                         <button
                             type="button"
@@ -104,8 +113,8 @@ export function WorkerFleet() {
             {/* Workers Grid */}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 max-h-[500px] overflow-y-auto pr-1">
                 {filtered.map(w => {
-                    const isActive = activeIds.has(w.worker_id);
-                    const load = workerLoad.find(l => l.worker_id === w.worker_id);
+                    const isActive = isOnline(w);
+                    const load = (workerLoad || []).find(l => l.worker_id === w.worker_id);
                     return (
                         <div
                             key={w.worker_id}

@@ -53,6 +53,14 @@ namespace AIStudio.Api.Services
             return user;
         }
 
+        // The app a portal login is bound to must exist and be enabled.
+        public async Task<bool> IsAppEnabledAsync(string appId)
+        {
+            using var conn = CreateConnection();
+            return await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM ai_studio_apps WHERE app_id = @AppId AND enabled = 1;", new { AppId = appId }) > 0;
+        }
+
         public async Task<User> RegisterUserAsync(string email, string password, string role = "customer")
         {
             using var conn = CreateConnection();
@@ -134,6 +142,28 @@ namespace AIStudio.Api.Services
 
             if (errors.Count > 0)
                 return (false, string.Join("; ", errors));
+
+            // Photos per task: never more than the admin limit (photos_per_task_max, default 50).
+            // Larger batches cannot finish within the task timeout, so they are rejected up front.
+            if (!string.IsNullOrWhiteSpace(task.ExtraImageUrls))
+            {
+                int photoCount = 0;
+                try
+                {
+                    using var doc = JsonDocument.Parse(task.ExtraImageUrls);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                        photoCount = doc.RootElement.EnumerateArray().Count(e => e.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(e.GetString()));
+                }
+                catch (JsonException) { }
+                if (photoCount > 0)
+                {
+                    using var limitConn = CreateConnection();
+                    int maxPhotos = await limitConn.ExecuteScalarAsync<int?>("SELECT photos_per_task_max FROM ai_studio_settings WITH (NOLOCK) WHERE id = 1;") ?? 50;
+                    if (maxPhotos <= 0) maxPhotos = 50;
+                    if (photoCount > maxPhotos)
+                        return (false, $"Ek task mein zyada se zyada {maxPhotos} photos bhej sakte hain (aapne {photoCount} bheji). Photos ko {maxPhotos}-{maxPhotos} ke alag tasks mein bhejein.");
+                }
+            }
 
             string taskType = task.TaskType.Trim();
 
@@ -255,6 +285,15 @@ namespace AIStudio.Api.Services
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(task.ExtraImageUrls))
+            {
+                var extraUrls = ParseUrls(task.ExtraImageUrls);
+                if (extraUrls.Count > 50)
+                {
+                    errors.Add($"Ek task me maximum 50 photos (extra_image_urls) allowed hain (aapne {extraUrls.Count} bheji hain)");
+                }
+            }
+
             if (task.BatchCount < 1 || task.BatchCount > 10)
             {
                 task.BatchCount = Math.Clamp(task.BatchCount, 1, 10);
@@ -329,7 +368,7 @@ namespace AIStudio.Api.Services
                     ELSE
                         UPDATE ai_studio_workers SET last_seen = SYSDATETIMEOFFSET() WHERE worker_id = @Id;
                     SELECT @Id;";
-                return await conn.ExecuteScalarAsync<string>(sqlWanted, new { Id = wantedId.Trim() });
+                return (await conn.ExecuteScalarAsync<string>(sqlWanted, new { Id = wantedId.Trim() })) ?? wantedId.Trim();
             }
 
             // Find next worker number worker_1, worker_2...
@@ -348,7 +387,7 @@ namespace AIStudio.Api.Services
                 END
                 SELECT @candidate;";
 
-            return await conn.ExecuteScalarAsync<string>(findNext);
+            return (await conn.ExecuteScalarAsync<string>(findNext)) ?? "worker_1";
         }
 
         public async Task<(bool paused, bool drain)> WorkerHeartbeatAsync(string workerId)
@@ -407,12 +446,17 @@ namespace AIStudio.Api.Services
                 FROM ai_studio_tasks WITH (READPAST)
                 WHERE (status = 'pending' OR (status = 'processing' AND locked_at < @StaleBefore))
                   AND (next_run_at IS NULL OR next_run_at <= SYSDATETIMEOFFSET())
+                  AND attempts < @MaxAttempts
                   AND tool IN @Tools
                   AND (@FilterTypes = 0 OR task_type IN @SpecificTypes)
                 ORDER BY priority DESC, id ASC;";
 
+            // Tasks that already failed max_attempts times (default 3) are skipped, never picked again
+            int maxAttempts = await conn.ExecuteScalarAsync<int?>("SELECT max_attempts FROM ai_studio_settings WITH (NOLOCK) WHERE id = 1;") ?? 3;
+
             return await conn.QueryAsync<TaskItem>(sql, new {
                 Limit = limit,
+                MaxAttempts = maxAttempts,
                 StaleBefore = staleBefore,
                 Tools = tools,
                 FilterTypes = (specificTypes != null && specificTypes.Count > 0) ? 1 : 0,
@@ -429,14 +473,16 @@ namespace AIStudio.Api.Services
                     worker_id = @WorkerId,
                     locked_at = SYSDATETIMEOFFSET(),
                     updated_at = SYSDATETIMEOFFSET()
-                WHERE id = @TaskId 
-                  AND (status = 'pending' OR (status = 'processing' AND locked_at < DATEADD(minute, -10, SYSDATETIMEOFFSET())));";
+                WHERE id = @TaskId
+                  AND attempts < (SELECT COALESCE(MAX(max_attempts), 3) FROM ai_studio_settings WITH (NOLOCK) WHERE id = 1)
+                  AND (status = 'pending'
+                       OR (status = 'processing' AND (locked_at IS NULL OR locked_at < DATEADD(minute, -10, SYSDATETIMEOFFSET()))));";
 
             int rows = await conn.ExecuteAsync(sql, new { TaskId = taskId, WorkerId = workerId });
             return rows > 0;
         }
 
-        public async Task<bool> CompleteTaskAsync(long taskId, string workerId, string status, string? outputImageUrl, string? outputImageUrls, string? outputText, decimal? matchScore, string? error, int? processMs)
+        public async Task<bool> CompleteTaskAsync(long taskId, string workerId, string status, string? outputImageUrl, string? outputImageUrls, string? outputText, decimal? matchScore, string? error, int? processMs, int? attempts = null, DateTimeOffset? nextRunAt = null)
         {
             using var conn = CreateConnection();
 
@@ -468,6 +514,8 @@ namespace AIStudio.Api.Services
                     face_match_score = COALESCE(@MatchScore, face_match_score),
                     error = @Error,
                     process_ms = @ProcessMs,
+                    attempts = COALESCE(@Attempts, attempts),
+                    next_run_at = @NextRunAt,
                     finished_at = SYSDATETIMEOFFSET(),
                     duration_ms = DATEDIFF(millisecond, created_at, SYSDATETIMEOFFSET()),
                     updated_at = SYSDATETIMEOFFSET()
@@ -482,7 +530,9 @@ namespace AIStudio.Api.Services
                 OutputText = outputText,
                 MatchScore = matchScore,
                 Error = error,
-                ProcessMs = processMs
+                ProcessMs = processMs,
+                Attempts = attempts,
+                NextRunAt = nextRunAt
             });
 
             return rows > 0;
@@ -518,6 +568,42 @@ namespace AIStudio.Api.Services
             if (budget > 0)
                 return Math.Max(0, budget - totalToday);
             return 999999;
+        }
+
+        // ==========================================
+        // AI STUDIO API USAGE (per app, from ai_studio_tasks)
+        // ==========================================
+        // Tasks per day + app for the last `days` days (today included): total, done, failed, photos made.
+        public async Task<IEnumerable<AppUsageDayRow>> GetAppUsageByDayAsync(int days)
+        {
+            using var conn = CreateConnection();
+            string sql = @"
+                SELECT CONVERT(VARCHAR(10), CAST(created_at AS DATE), 23) AS Day,
+                       COALESCE(NULLIF(app_id, ''), 'weargen') AS AppId,
+                       COUNT(1) AS Tasks,
+                       SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS Done,
+                       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS Failed,
+                       SUM(CASE WHEN status = 'done' AND tool = 'image' THEN COALESCE(batch_count, 1) ELSE 0 END) AS Photos
+                FROM ai_studio_tasks WITH (NOLOCK)
+                WHERE created_at > DATEADD(DAY, -@Days, CAST(SYSDATETIMEOFFSET() AS DATE))
+                GROUP BY CAST(created_at AS DATE), COALESCE(NULLIF(app_id, ''), 'weargen')
+                ORDER BY Day, AppId;";
+            return await conn.QueryAsync<AppUsageDayRow>(sql, new { Days = days });
+        }
+
+        // Which tools each app used most in the same period.
+        public async Task<IEnumerable<AppUsageToolRow>> GetAppUsageByToolAsync(int days)
+        {
+            using var conn = CreateConnection();
+            string sql = @"
+                SELECT COALESCE(NULLIF(app_id, ''), 'weargen') AS AppId, task_type AS TaskType,
+                       COUNT(1) AS Tasks,
+                       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS Failed
+                FROM ai_studio_tasks WITH (NOLOCK)
+                WHERE created_at > DATEADD(DAY, -@Days, CAST(SYSDATETIMEOFFSET() AS DATE))
+                GROUP BY COALESCE(NULLIF(app_id, ''), 'weargen'), task_type
+                ORDER BY AppId, Tasks DESC;";
+            return await conn.QueryAsync<AppUsageToolRow>(sql, new { Days = days });
         }
 
         // ==========================================

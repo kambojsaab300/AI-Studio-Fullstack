@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Sliders, Save, Mail, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-import { TABLES } from '../../api/config';
+import { adminApi } from '../../api/adminApi';
 import { useT } from '../../i18n/lang';
 
 export function SystemSettings() {
@@ -14,7 +14,7 @@ export function SystemSettings() {
         e.preventDefault();
         setSaving(true);
         try {
-            const { error: e1 } = await sb.from(TABLES.SETTINGS).update({
+            const { error: e1 } = await adminApi.updateSettings({
                 task_concurrency: Number(cfg.task_concurrency),
                 gemini_concurrency: Number(cfg.gemini_concurrency),
                 photos_per_task_max: Number(cfg.photos_per_task_max) || 50,
@@ -23,9 +23,8 @@ export function SystemSettings() {
                 maintenance_on: !!cfg.maintenance_on,
                 daily_gemini_budget: Number(cfg.daily_gemini_budget) || 1000,
                 cloudinary_enabled: !!cfg.cloudinary_enabled,
-                imgbb_enabled: !!cfg.imgbb_enabled,
-                updated_at: new Date().toISOString()
-            }).eq('id', 1);
+                imgbb_enabled: !!cfg.imgbb_enabled
+            });
 
             if (e1) throw e1;
 
@@ -41,13 +40,12 @@ export function SystemSettings() {
     };
 
     const handleSendTestMail = async () => {
-        setMsg(t('Test mail bheja ja raha hai...', 'Sending test mail...'));
-        const { error } = await sb.rpc('ai_studio_send_test_mail');
-        setMsg(error ? 'Test mail error: ' + error.message : 'Test mail successfully sent! Check your inbox.');
+        // The server has no mail sender yet; the old RPC only pretended to send.
+        setMsg(t('Test mail abhi server par available nahi hai.', 'Test mail is not available on the server yet.'));
     };
 
     return (
-        <section className="bg-[#0b0e17] border border-white/10 rounded-3xl p-5 space-y-5 shadow-2xl">
+        <section className="bg-[#121212] border border-white/10 rounded-3xl p-5 space-y-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/5 pb-3">
                 <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">

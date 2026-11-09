@@ -12,7 +12,8 @@ namespace AIStudio.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class AdminController : ControllerBase
+    [RequireAdmin] // every action here needs a server-signed admin JWT
+    public partial class AdminController : ControllerBase
     {
         private readonly DatabaseService _db;
 
@@ -24,23 +25,6 @@ namespace AIStudio.Api.Controllers
         // ==========================================
         // WORKERS & LOAD
         // ==========================================
-        [HttpGet("workers")]
-        public async Task<IActionResult> GetWorkers()
-        {
-            var loads = await _db.GetWorkerLoadsAsync();
-            return Ok(loads.Select(w => new
-            {
-                worker_id = w.WorkerId,
-                last_seen = w.LastSeen.ToString("o"),
-                processing = w.Processing,
-                done = w.Done,
-                paused = w.Paused,
-                drain = w.Drain,
-                pause_reason = w.PauseReason,
-                task_limit = w.TaskLimit
-            }));
-        }
-
         [HttpGet("worker-details")]
         public async Task<IActionResult> GetWorkerDetails()
         {
@@ -62,11 +46,12 @@ namespace AIStudio.Api.Controllers
         public async Task<IActionResult> ToggleWorkerPause(string workerId, [FromBody] JsonElement body)
         {
             bool paused = body.TryGetProperty("paused", out var p) && p.GetBoolean();
+            string? reason = body.TryGetProperty("pause_reason", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
             using var conn = _db.CreateConnection();
             string sql = paused 
-                ? "UPDATE ai_studio_workers SET paused = 1 WHERE worker_id = @WorkerId;"
+                ? "UPDATE ai_studio_workers SET paused = 1, pause_reason = @Reason WHERE worker_id = @WorkerId;"
                 : "UPDATE ai_studio_workers SET paused = 0, pause_reason = NULL WHERE worker_id = @WorkerId;";
-            await conn.ExecuteAsync(sql, new { WorkerId = workerId });
+            await conn.ExecuteAsync(sql, new { WorkerId = workerId, Reason = reason });
             return Ok(new { success = true, paused });
         }
 
@@ -113,52 +98,6 @@ namespace AIStudio.Api.Controllers
         // ==========================================
         // TASKS MANAGEMENT
         // ==========================================
-        [HttpGet("tasks")]
-        public async Task<IActionResult> GetTasks([FromQuery] string? status, [FromQuery] string? tool, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
-        {
-            using var conn = _db.CreateConnection();
-            int offset = (Math.Max(1, page) - 1) * pageSize;
-
-            string whereClause = "WHERE 1 = 1";
-            if (!string.IsNullOrWhiteSpace(status))
-                whereClause += " AND status = @Status";
-            if (!string.IsNullOrWhiteSpace(tool))
-                whereClause += " AND tool = @Tool";
-
-            string sqlCount = $"SELECT COUNT(1) FROM ai_studio_tasks {whereClause};";
-            int total = await conn.ExecuteScalarAsync<int>(sqlCount, new { Status = status, Tool = tool });
-
-            string sql = $@"
-                SELECT id, task_type as TaskType, model, prompt, status, error, worker_id as WorkerId,
-                       user_id as UserId, output_image_url as OutputImageUrl, output_text as OutputText,
-                       created_at as CreatedAt, priority, attempts, duration_ms as DurationMs
-                FROM ai_studio_tasks
-                {whereClause}
-                ORDER BY id DESC
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
-
-            var rows = await conn.QueryAsync<TaskItem>(sql, new { Status = status, Tool = tool, Offset = offset, PageSize = pageSize });
-            var result = rows.Select(r => new
-            {
-                id = r.Id,
-                task_type = r.TaskType,
-                model = r.Model,
-                prompt = r.Prompt,
-                status = r.Status,
-                error = r.Error,
-                worker_id = r.WorkerId,
-                user_id = r.UserId,
-                output_image_url = r.OutputImageUrl,
-                output_text = r.OutputText,
-                created_at = r.CreatedAt.ToString("o"),
-                priority = r.Priority,
-                attempts = r.Attempts,
-                duration_ms = r.DurationMs
-            });
-
-            return Ok(new { total, page, pageSize, data = result });
-        }
-
         [HttpGet("tasks/pending-count")]
         public async Task<IActionResult> GetPendingCount()
         {
@@ -224,100 +163,39 @@ namespace AIStudio.Api.Controllers
             return Ok(new { success = true });
         }
 
+        [HttpPost("tasks/{id}/stop")]
+        public async Task<IActionResult> StopTask(long id)
+        {
+            using var conn = _db.CreateConnection();
+            int rows = await conn.ExecuteAsync(@"
+                UPDATE ai_studio_tasks 
+                SET status = 'failed', error = 'Stopped by admin', finished_at = SYSDATETIMEOFFSET() 
+                WHERE id = @Id AND (status = 'pending' OR status = 'processing');", new { Id = id });
+            return Ok(new { success = true, stopped = rows > 0 });
+        }
+
+        [HttpPost("tasks/bulk-delete")]
+        public async Task<IActionResult> BulkDeleteTasks([FromBody] JsonElement body)
+        {
+            if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty("ids", out var idsProp) && idsProp.ValueKind == JsonValueKind.Array)
+            {
+                var ids = JsonSerializer.Deserialize<List<long>>(idsProp.GetRawText());
+                if (ids != null && ids.Count > 0)
+                {
+                    using var conn = _db.CreateConnection();
+                    int count = await conn.ExecuteAsync("DELETE FROM ai_studio_tasks WHERE id IN @Ids;", new { Ids = ids });
+                    return Ok(new { success = true, deleted = count });
+                }
+            }
+            return BadRequest(new { error = "Invalid 'ids' array provided." });
+        }
+
         // ==========================================
         // CATALOG MANAGEMENT
         // ==========================================
-        [HttpGet("catalog")]
-        public async Task<IActionResult> GetCatalog()
-        {
-            var catalog = await _db.GetCatalogAsync();
-            return Ok(catalog.Select(c => new
-            {
-                task_type = c.TaskType,
-                label = c.Label,
-                customer_label = c.CustomerLabel,
-                hint = c.Hint,
-                output = c.Output,
-                inputs = string.IsNullOrEmpty(c.Inputs) ? new string[0] : JsonSerializer.Deserialize<string[]>(c.Inputs),
-                optional = string.IsNullOrEmpty(c.Optional) ? new string[0] : JsonSerializer.Deserialize<string[]>(c.Optional),
-                labels = string.IsNullOrEmpty(c.Labels) ? (object)new { } : JsonSerializer.Deserialize<Dictionary<string, string>>(c.Labels),
-                customer_labels = string.IsNullOrEmpty(c.CustomerLabels) ? null : JsonSerializer.Deserialize<Dictionary<string, string>>(c.CustomerLabels),
-                extras = c.Extras,
-                prompt_required = c.PromptRequired,
-                face_check = c.FaceCheck,
-                edit = c.Edit,
-                transparent = c.Transparent,
-                angles = string.IsNullOrEmpty(c.Angles) ? null : JsonSerializer.Deserialize<string[]>(c.Angles),
-                family = c.Family,
-                per_photo = c.PerPhoto,
-                customer_visible = c.CustomerVisible,
-                enabled = c.Enabled,
-                sort = c.Sort,
-                tool = c.Tool,
-                updated_at = c.UpdatedAt.ToString("o")
-            }));
-        }
-
-        [HttpPut("catalog/{taskType}")]
-        public async Task<IActionResult> UpdateCatalogItem(string taskType, [FromBody] Dictionary<string, object> updates)
-        {
-            using var conn = _db.CreateConnection();
-            var setClauses = new List<string>();
-            var param = new DynamicParameters();
-            param.Add("TaskType", taskType);
-
-            foreach (var kvp in updates)
-            {
-                string col = kvp.Key;
-                if (col == "task_type") continue;
-                setClauses.Add($"[{col}] = @{col}");
-                param.Add(col, kvp.Value?.ToString());
-            }
-
-            setClauses.Add("updated_at = SYSDATETIMEOFFSET()");
-            string sql = $"UPDATE ai_studio_task_catalog SET {string.Join(", ", setClauses)} WHERE task_type = @TaskType;";
-            await conn.ExecuteAsync(sql, param);
-            return Ok(new { success = true });
-        }
-
         // ==========================================
         // APPS & APP_TASKS
         // ==========================================
-        [HttpGet("apps")]
-        public async Task<IActionResult> GetApps()
-        {
-            var apps = await _db.GetAppsAsync();
-            return Ok(apps.Select(a => new
-            {
-                app_id = a.AppId,
-                label = a.Label,
-                enabled = a.Enabled,
-                sort = a.Sort,
-                task_types = a.TaskTypes
-            }));
-        }
-
-        [HttpPost("app-tasks")]
-        public async Task<IActionResult> LinkAppTask([FromBody] JsonElement body)
-        {
-            string appId = body.GetProperty("app_id").GetString()!;
-            string taskType = body.GetProperty("task_type").GetString()!;
-            using var conn = _db.CreateConnection();
-            string sql = @"
-                IF NOT EXISTS (SELECT 1 FROM ai_studio_app_tasks WHERE app_id = @AppId AND task_type = @TaskType)
-                    INSERT INTO ai_studio_app_tasks (app_id, task_type) VALUES (@AppId, @TaskType);";
-            await conn.ExecuteAsync(sql, new { AppId = appId, TaskType = taskType });
-            return Ok(new { success = true });
-        }
-
-        [HttpDelete("app-tasks")]
-        public async Task<IActionResult> UnlinkAppTask([FromQuery] string appId, [FromQuery] string taskType)
-        {
-            using var conn = _db.CreateConnection();
-            await conn.ExecuteAsync("DELETE FROM ai_studio_app_tasks WHERE app_id = @AppId AND task_type = @TaskType;", new { AppId = appId, TaskType = taskType });
-            return Ok(new { success = true });
-        }
-
         // ==========================================
         // TOOLS & TOOL TYPES
         // ==========================================
@@ -367,21 +245,6 @@ namespace AIStudio.Api.Controllers
         // ==========================================
         // FAMILY ROLES
         // ==========================================
-        [HttpGet("family-roles")]
-        public async Task<IActionResult> GetFamilyRoles()
-        {
-            var roles = await _db.GetFamilyRolesAsync();
-            return Ok(roles.Select(r => new
-            {
-                role_key = r.RoleKey,
-                label_admin = r.LabelAdmin,
-                label_customer = r.LabelCustomer,
-                prompt_text = r.PromptText,
-                sort_order = r.SortOrder,
-                enabled = r.Enabled
-            }));
-        }
-
         [HttpPut("family-roles/{roleKey}")]
         public async Task<IActionResult> UpdateFamilyRole(string roleKey, [FromBody] JsonElement body)
         {
@@ -414,63 +277,9 @@ namespace AIStudio.Api.Controllers
         // ==========================================
         // SETTINGS & SECRETS
         // ==========================================
-        [HttpGet("settings")]
-        public async Task<IActionResult> GetSettings()
-        {
-            var s = await _db.GetSettingsAsync();
-            var sec = await _db.GetSecretsAsync();
-            return Ok(new { settings = s, secrets = new { imgbb_api_key = sec.ImgbbApiKey, brevo_api_key = sec.BrevoApiKey } });
-        }
-
-        [HttpPut("settings")]
-        public async Task<IActionResult> UpdateSettings([FromBody] Dictionary<string, object> updates)
-        {
-            using var conn = _db.CreateConnection();
-            var setClauses = new List<string>();
-            var param = new DynamicParameters();
-
-            foreach (var kvp in updates)
-            {
-                if (kvp.Key == "id") continue;
-                setClauses.Add($"[{kvp.Key}] = @{kvp.Key}");
-                param.Add(kvp.Key, kvp.Value?.ToString());
-            }
-
-            setClauses.Add("updated_at = SYSDATETIMEOFFSET()");
-            string sql = $"UPDATE ai_studio_settings SET {string.Join(", ", setClauses)} WHERE id = 1;";
-            await conn.ExecuteAsync(sql, param);
-            return Ok(new { success = true });
-        }
-
-        [HttpPut("secrets")]
-        public async Task<IActionResult> UpdateSecrets([FromBody] Dictionary<string, string?> updates)
-        {
-            using var conn = _db.CreateConnection();
-            var setClauses = new List<string>();
-            var param = new DynamicParameters();
-
-            foreach (var kvp in updates)
-            {
-                if (kvp.Key == "id") continue;
-                setClauses.Add($"[{kvp.Key}] = @{kvp.Key}");
-                param.Add(kvp.Key, kvp.Value);
-            }
-
-            string sql = $"UPDATE ai_studio_secrets SET {string.Join(", ", setClauses)} WHERE id = 1;";
-            await conn.ExecuteAsync(sql, param);
-            return Ok(new { success = true });
-        }
-
         // ==========================================
         // MODELS & PROMPTS
         // ==========================================
-        [HttpGet("models")]
-        public async Task<IActionResult> GetModels()
-        {
-            var models = await _db.GetModelsAsync();
-            return Ok(models);
-        }
-
         [HttpPut("models/{modelId}")]
         public async Task<IActionResult> UpdateModel(string modelId, [FromBody] JsonElement body)
         {
@@ -480,34 +289,6 @@ namespace AIStudio.Api.Controllers
                 bool enabled = e.GetBoolean();
                 await conn.ExecuteAsync("UPDATE ai_studio_models SET enabled = @Enabled WHERE model_id = @ModelId;", new { ModelId = modelId, Enabled = enabled ? 1 : 0 });
             }
-            return Ok(new { success = true });
-        }
-
-        [HttpGet("prompts")]
-        public async Task<IActionResult> GetPrompts()
-        {
-            var prompts = await _db.GetPromptsAsync();
-            return Ok(prompts);
-        }
-
-        [HttpPut("prompts/{taskType}")]
-        public async Task<IActionResult> UpdatePrompt(string taskType, [FromBody] Dictionary<string, object> updates)
-        {
-            using var conn = _db.CreateConnection();
-            var setClauses = new List<string>();
-            var param = new DynamicParameters();
-            param.Add("TaskType", taskType);
-
-            foreach (var kvp in updates)
-            {
-                if (kvp.Key == "task_type") continue;
-                setClauses.Add($"[{kvp.Key}] = @{kvp.Key}");
-                param.Add(kvp.Key, kvp.Value?.ToString());
-            }
-
-            setClauses.Add("updated_at = SYSDATETIMEOFFSET()");
-            string sql = $"UPDATE ai_studio_prompts SET {string.Join(", ", setClauses)} WHERE task_type = @TaskType;";
-            await conn.ExecuteAsync(sql, param);
             return Ok(new { success = true });
         }
 

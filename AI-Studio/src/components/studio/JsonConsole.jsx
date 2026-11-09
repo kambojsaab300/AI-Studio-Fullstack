@@ -11,9 +11,10 @@ export function JsonConsole({ row, preview, onSendTask }) {
     const modelPayload = JSON.stringify(preview, null, 2);
 
     const curlSnippet = `# 1. cURL API Call (MonsterASP / .NET Core):
-curl -X POST "${API_URL}/rest/v1/rpc/upload_ai_studio_task" \\
+curl -X POST "${API_URL}/api/customer/tasks" \\
   -H "Content-Type: application/json" \\
-  -d '${JSON.stringify({ p_payload: row }, null, 2)}'`;
+  -H "X-Api-Key: YOUR_APP_API_KEY" \\
+  -d '${JSON.stringify(row, null, 2)}'`;
 
     const sampleResponse = JSON.stringify({
         id: 38,
@@ -37,7 +38,7 @@ curl -X POST "${API_URL}/rest/v1/rpc/upload_ai_studio_task" \\
     };
 
     return (
-        <section className="bg-[#0e1320] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-3.5 sm:space-y-4 shadow-xl">
+        <section className="bg-[#161616] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-3.5 sm:space-y-4 shadow-xl">
             {/* Header & Copy Button */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
                 <div className="flex items-center gap-2">
@@ -61,7 +62,7 @@ curl -X POST "${API_URL}/rest/v1/rpc/upload_ai_studio_task" \\
             </div>
 
             {/* Sub Tabs */}
-            <div className="flex items-center gap-1 bg-[#080b12] p-1 rounded-xl border border-slate-800 text-[11px] font-mono">
+            <div className="flex items-center gap-1 bg-[#0f0f0f] p-1 rounded-xl border border-slate-800 text-[11px] font-mono">
                 {[
                     { id: 'payload', label: '1. Task JSON' },
                     { id: 'model', label: '2. Gemini Body' },
@@ -83,7 +84,7 @@ curl -X POST "${API_URL}/rest/v1/rpc/upload_ai_studio_task" \\
 
             {/* Live Code Preview */}
             <div className="relative">
-                <pre className="bg-[#080b12] border border-slate-800 rounded-xl p-3 text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-[360px] sm:max-h-[420px] scrollbar-thin leading-relaxed selection:bg-emerald-500/30">
+                <pre className="bg-[#0f0f0f] border border-slate-800 rounded-xl p-3 text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-[360px] sm:max-h-[420px] scrollbar-thin leading-relaxed selection:bg-emerald-500/30">
                     <code>{activeContent}</code>
                 </pre>
             </div>

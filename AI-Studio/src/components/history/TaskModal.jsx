@@ -6,11 +6,11 @@ import { useT } from '../../i18n/lang';
 
 export function TaskModal({ task, onClose }) {
     const t = useT();
-    if (!task) return null;
-
     const [copiedText, setCopiedText] = useState(false);
     const [copiedJson, setCopiedJson] = useState(false);
     const [jsonTab, setJsonTab] = useState('formatted'); // 'formatted' | 'raw'
+
+    if (!task) return null;
 
     const copyToClipboard = (text, type) => {
         try {
@@ -40,7 +40,7 @@ export function TaskModal({ task, onClose }) {
 
     return (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
-            <div className="bg-[#0b0e17] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="bg-[#121212] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
                 {/* Modal Header */}
                 <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
                     <div className="flex items-center gap-3 flex-wrap">
@@ -108,7 +108,7 @@ export function TaskModal({ task, onClose }) {
 
                     {/* 💬 Chat / Text Output Response (Proper Formatted View) */}
                     {task.output_text && (
-                        <div className="bg-gradient-to-br from-emerald-500/10 via-[#0e1320] to-[#0e1320] border border-emerald-500/30 rounded-2xl p-4 sm:p-5 space-y-3 shadow-xl">
+                        <div className="bg-gradient-to-br from-emerald-500/10 via-[#161616] to-[#161616] border border-emerald-500/30 rounded-2xl p-4 sm:p-5 space-y-3 shadow-xl">
                             <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2.5">
                                 <div className="flex items-center gap-2">
                                     <MessageSquare className="w-4 h-4 text-emerald-400" />
@@ -136,7 +136,7 @@ export function TaskModal({ task, onClose }) {
 
                     {/* 🖼️ Generated Photo(s) Output Display */}
                     {photoList.length > 0 && (
-                        <div className="space-y-3 bg-[#0e1320] border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
+                        <div className="space-y-3 bg-[#161616] border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
                             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 text-xs font-bold text-slate-300">
                                 <div className="flex items-center gap-2">
                                     <ImageIcon className="w-4 h-4 text-amber-400" />
@@ -183,7 +183,7 @@ export function TaskModal({ task, onClose }) {
 
                     {/* Input Prompt & Parameters */}
                     {task.prompt && (
-                        <div className="bg-[#0e1320] border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <div className="bg-[#161616] border border-slate-800 rounded-2xl p-4 space-y-1.5">
                             <span className="text-[11px] font-bold text-stone-400 uppercase tracking-wider block">Submitted Input Prompt</span>
                             <p className="text-xs text-stone-200 bg-black/40 border border-white/5 rounded-xl p-3 font-mono leading-relaxed select-text">
                                 {task.prompt}
@@ -212,7 +212,7 @@ export function TaskModal({ task, onClose }) {
                     </div>
 
                     {/* 💻 Complete Database Payload Row in JSON Format */}
-                    <div className="bg-[#050810] border border-white/10 rounded-2xl p-4 space-y-3 shadow-xl">
+                    <div className="bg-[#080808] border border-white/10 rounded-2xl p-4 space-y-3 shadow-xl">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
                             <div className="flex items-center gap-2">
                                 <Terminal className="w-4 h-4 text-amber-400" />

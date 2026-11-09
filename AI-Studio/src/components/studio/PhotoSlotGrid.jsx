@@ -7,9 +7,9 @@ import { useT } from '../../i18n/lang';
 export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
     const t = useT();
     const inputs = Array.isArray(type?.inputs) ? type.inputs : [];
-    if (inputs.length === 0) return null;
-
     const [uploadingSlot, setUploadingSlot] = useState(null);
+
+    if (inputs.length === 0) return null;
 
     const handleFileUpload = async (e, col) => {
         const file = e.target.files?.[0];
@@ -58,7 +58,7 @@ export function PhotoSlotGrid({ type, form, setForm, onSetMsg }) {
                         <div key={key} className={`rounded-2xl p-3.5 space-y-3 transition-all ${
                             isMissing 
                                 ? 'bg-rose-950/15 border-2 border-rose-500/50 shadow-sm shadow-rose-950/30' 
-                                : 'bg-[#080b12] border border-slate-800 hover:border-slate-700'
+                                : 'bg-[#0f0f0f] border border-slate-800 hover:border-slate-700'
                         }`}>
                             {/* Card Header: Slot Title & Clear Button */}
                             <div className="flex items-center justify-between text-xs">

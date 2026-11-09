@@ -4,7 +4,7 @@
 // Supports standalone apps, 3rd party clients, and SDK usage
 // ============================================================
 
-import { API, TABLES } from './config.js';
+import { adminApi } from './adminApi.js';
 
 export class AppService {
     constructor(client) {
@@ -17,27 +17,8 @@ export class AppService {
      * List all registered and active client apps (e.g. weargen, ppp, etc.)
      */
     async listApps() {
-        try {
-            // First attempt: standard apps table
-            const { data, error } = await this.client
-                .from(TABLES.APPS)
-                .select('*')
-                .order('sort');
-
-            if (!error && Array.isArray(data) && data.length > 0) {
-                return { data, error: null };
-            }
-
-            // Fallback attempt: get_app_list RPC
-            const rpcRes = await this.client.rpc(API.GET_APPS);
-            if (!rpcRes.error && Array.isArray(rpcRes.data)) {
-                return { data: rpcRes.data, error: null };
-            }
-
-            return { data: [], error: error || rpcRes.error };
-        } catch (err) {
-            return { data: [], error: { message: err.message } };
-        }
+        const { data, error } = await adminApi.listApps();
+        return { data: Array.isArray(data) ? data : [], error };
     }
 
     /**
@@ -48,37 +29,18 @@ export class AppService {
             return { data: null, error: { message: 'appId parameter is required' } };
         }
 
-        try {
-            // Fetch app metadata and assigned tasks concurrently
-            const [appRes, linksRes] = await Promise.all([
-                this.client.from(TABLES.APPS).select('*').eq('app_id', appId).single(),
-                this.client.from(TABLES.APP_TASKS).select('task_type').eq('app_id', appId)
-            ]);
+        const [appRes, linksRes] = await Promise.all([
+            adminApi.getApp(appId),
+            adminApi.listAppTasks(appId)
+        ]);
+        if (appRes.error) return { data: null, error: appRes.error };
 
-            if (appRes.error) {
-                // If single fails, try listing all
-                const { data: all } = await this.listApps();
-                const found = all?.find(a => a.app_id === appId);
-                if (found) {
-                    const taskTypes = found.task_types || [];
-                    const result = { ...found, task_types: taskTypes };
-                    this._appCache.set(appId, result);
-                    return { data: result, error: null };
-                }
-                return { data: null, error: appRes.error };
-            }
-
-            const taskTypes = linksRes.data ? linksRes.data.map(l => l.task_type) : [];
-            const result = {
-                ...appRes.data,
-                task_types: taskTypes
-            };
-
-            this._appCache.set(appId, result);
-            return { data: result, error: null };
-        } catch (err) {
-            return { data: null, error: { message: err.message } };
-        }
+        const result = {
+            ...appRes.data,
+            task_types: (linksRes.data || []).map(l => l.task_type)
+        };
+        this._appCache.set(appId, result);
+        return { data: result, error: null };
     }
 
     /**
@@ -88,7 +50,7 @@ export class AppService {
         try {
             const [appRes, catRes] = await Promise.all([
                 this.getApp(appId),
-                this.client.from(TABLES.CATALOG).select('*').order('sort')
+                adminApi.listCatalog()
             ]);
 
             if (appRes.error) return { data: [], error: appRes.error };
@@ -160,25 +122,10 @@ export class AppService {
                 created_at: new Date().toISOString()
             };
 
-            // 3. Dispatch via RPC upload_ai_studio_task
-            const { data, error } = await this.client.rpc(API.CREATE_TASK, { p_payload: payload });
-
-            if (error) {
-                // Fallback attempt: direct table insertion
-                const { data: insData, error: insErr } = await this.client
-                    .from(TABLES.TASKS)
-                    .insert(payload);
-
-                if (insErr) {
-                    return { success: false, taskId: null, error: insErr };
-                }
-
-                const newId = Array.isArray(insData) && insData[0] ? insData[0].id : null;
-                return { success: true, taskId: newId, error: null };
-            }
-
-            const taskId = typeof data === 'number' ? data : (data?.id || (Array.isArray(data) ? data[0]?.id : null));
-            return { success: true, taskId, data, error: null };
+            // 3. Dispatch to the admin task endpoint
+            const { data, error } = await adminApi.createTask(payload);
+            if (error) return { success: false, taskId: null, error };
+            return { success: true, taskId: data?.id ?? null, data, error: null };
         } catch (err) {
             return { success: false, taskId: null, error: { message: err.message } };
         }
@@ -191,46 +138,21 @@ export class AppService {
         if (!appId) {
             return { data: [], error: { message: 'appId parameter is required' } };
         }
-
-        try {
-            let query = this.client
-                .from(TABLES.TASKS)
-                .select('*')
-                .eq('app_id', appId)
-                .order('id', { ascending: false })
-                .range(offset, offset + limit - 1);
-
-            if (status) {
-                query = query.eq('status', status);
-            }
-
-            const { data, error, count } = await query;
-            return { data: data || [], error, count };
-        } catch (err) {
-            return { data: [], error: { message: err.message } };
-        }
+        const { data, error, count } = await adminApi.listTasks({ appId, status, limit, offset });
+        return { data: data || [], error, count };
     }
 
     /**
      * Fetch a single task by ID, verifying app ownership
      */
-    async getTask(appId, taskId, { columns = '*' } = {}) {
+    async getTask(appId, taskId) {
         if (!appId || !taskId) {
             return { data: null, error: { message: 'appId and taskId are required' } };
         }
-
-        try {
-            const { data, error } = await this.client
-                .from(TABLES.TASKS)
-                .select(columns)
-                .eq('id', taskId)
-                .eq('app_id', appId)
-                .single();
-
-            return { data, error };
-        } catch (err) {
-            return { data: null, error: { message: err.message } };
-        }
+        const { data, error } = await adminApi.getTask(taskId);
+        if (error) return { data: null, error };
+        if (data?.app_id !== appId) return { data: null, error: { message: 'Task not found for this app' } };
+        return { data, error: null };
     }
 
     /**
@@ -240,10 +162,9 @@ export class AppService {
     async pollTaskUntilComplete(appId, taskId, { intervalMs = 2000, maxSeconds = 180, onProgress } = {}) {
         const start = Date.now();
         const timeoutMs = maxSeconds * 1000;
-        const leanColumns = 'id,app_id,task_type,status,error,output_image_url,duration_ms,process_ms';
 
         while (Date.now() - start < timeoutMs) {
-            const { data: task, error } = await this.getTask(appId, taskId, { columns: leanColumns });
+            const { data: task, error } = await this.getTask(appId, taskId);
             if (error || !task) {
                 throw new Error(error?.message || 'Task not found');
             }
@@ -271,7 +192,7 @@ export class AppService {
      */
     getApiSnippets(appId, taskType = 'text_to_image', samplePayload = {}) {
         const apiUrl = this.client.apiUrl || 'https://aistudio.runasp.net';
-        const token = 'YOUR_API_KEY_OR_TOKEN';
+        const token = 'YOUR_APP_API_KEY';
 
         const payloadObj = {
             app_id: appId,
@@ -284,56 +205,52 @@ export class AppService {
             ...samplePayload
         };
 
-        const jsonStr = JSON.stringify({ p_payload: payloadObj }, null, 2);
+        const jsonStr = JSON.stringify(payloadObj, null, 2);
 
         return {
-            curl: `curl -X POST "${apiUrl}/rest/v1/rpc/upload_ai_studio_task" \\
+            curl: `curl -X POST "${apiUrl}/api/customer/tasks" \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${token}" \\
+  -H "X-Api-Key: ${token}" \\
   -d '${jsonStr.replace(/'/g, "'\\''")}'`,
 
             javascript: `// External Web or Node.js Client
 async function runStudioTask() {
-  const response = await fetch("${apiUrl}/rest/v1/rpc/upload_ai_studio_task", {
+  const response = await fetch("${apiUrl}/api/customer/tasks", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": "Bearer ${token}"
+      "X-Api-Key": "${token}"
     },
-    body: JSON.stringify({
-      p_payload: ${JSON.stringify(payloadObj, null, 6)}
-    })
+    body: JSON.stringify(${JSON.stringify(payloadObj, null, 6)})
   });
 
-  const taskId = await response.json();
+  const { id: taskId } = await response.json();
   console.log("Task Submitted! Task ID:", taskId);
 
   // Poll task status:
-  const taskRes = await fetch("${apiUrl}/rest/v1/ai_studio_tasks?id=eq." + taskId + "&app_id=eq.${appId}");
-  const taskData = await taskRes.json();
-  console.log("Status:", taskData[0]?.status, "Result Image:", taskData[0]?.output_image_url);
+  const taskRes = await fetch("${apiUrl}/api/customer/tasks?userId=${appId}_api_user&appId=${appId}");
+  const task = (await taskRes.json()).find(t => t.id === taskId);
+  console.log("Status:", task?.status, "Result Image:", task?.output_image_url);
 }`,
 
             python: `import requests, time
 
 API_URL = "${apiUrl}"
 TOKEN = "${token}"
-HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+HEADERS = {"X-Api-Key": TOKEN, "Content-Type": "application/json"}
 
 # 1. Create Task for App "${appId}"
-payload = {
-    "p_payload": ${JSON.stringify(payloadObj, null, 4).replace(/null/g, 'None')}
-}
+payload = ${JSON.stringify(payloadObj, null, 4).replace(/null/g, 'None')}
 
-res = requests.post(f"{API_URL}/rest/v1/rpc/upload_ai_studio_task", json=payload, headers=HEADERS)
-task_id = res.json()
+res = requests.post(f"{API_URL}/api/customer/tasks", json=payload, headers=HEADERS)
+task_id = res.json()["id"]
 print(f"Task Created! ID: {task_id}")
 
 # 2. Poll until completed
 for _ in range(30):
     time.sleep(2)
-    poll_res = requests.get(f"{API_URL}/rest/v1/ai_studio_tasks?id=eq.{task_id}&app_id=eq.${appId}", headers=HEADERS)
-    task = poll_res.json()[0]
+    poll_res = requests.get(f"{API_URL}/api/customer/tasks?userId=${appId}_api_user&appId=${appId}", headers=HEADERS)
+    task = next(t for t in poll_res.json() if t["id"] == task_id)
     print(f"Task status: {task['status']}")
     if task['status'] == 'completed':
         print(f"Success! Output Image: {task['output_image_url']}")

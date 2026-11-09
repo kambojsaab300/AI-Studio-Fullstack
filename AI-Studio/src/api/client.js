@@ -14,6 +14,8 @@ export class ApiQueryBuilder {
         this._isSingle = false;
         this._isCount = false;
         this._isHead = false;
+        this._method = 'GET';
+        this._body = undefined;
     }
 
     select(columns = '*', options = {}) {
@@ -97,6 +99,11 @@ export class ApiQueryBuilder {
                 const text = await res.text();
                 let errObj;
                 try { errObj = JSON.parse(text); } catch { errObj = { message: text }; }
+                // API errors come as { error: "..." }; screens read error.message, so always fill it
+                if (errObj && typeof errObj === 'object' && !errObj.message) {
+                    errObj.message = errObj.error || `HTTP ${res.status}`;
+                }
+                if (res.status === 401) errObj.message += ' (dobara login karein)';
                 return { data: null, error: errObj, count: 0 };
             }
 
@@ -113,24 +120,35 @@ export class ApiQueryBuilder {
         }
     }
 
+    // Builds the request URL; query string (eq./neq. filters) is appended only when present.
+    _url() {
+        const qs = this.params.toString();
+        return `${this.apiUrl}/rest/v1/${this.table}${qs ? `?${qs}` : ''}`;
+    }
+
+    // Chainable: insert/update/delete return `this` so filters like .eq() can follow.
+    // The request is sent when the builder is awaited (then), using the stored method.
     then(resolve, reject) {
-        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
-        return this._fetch(url, { method: 'GET' }).then(resolve, reject);
+        const options = { method: this._method };
+        if (this._body !== undefined) options.body = this._body;
+        return this._fetch(this._url(), options).then(resolve, reject);
     }
 
-    async insert(data) {
-        const url = `${this.apiUrl}/rest/v1/${this.table}`;
-        return this._fetch(url, { method: 'POST', body: JSON.stringify(data) });
+    insert(data) {
+        this._method = 'POST';
+        this._body = JSON.stringify(data);
+        return this;
     }
 
-    async update(data) {
-        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
-        return this._fetch(url, { method: 'PATCH', body: JSON.stringify(data) });
+    update(data) {
+        this._method = 'PATCH';
+        this._body = JSON.stringify(data);
+        return this;
     }
 
-    async delete() {
-        const url = `${this.apiUrl}/rest/v1/${this.table}?${this.params.toString()}`;
-        return this._fetch(url, { method: 'DELETE' });
+    delete() {
+        this._method = 'DELETE';
+        return this;
     }
 }
 

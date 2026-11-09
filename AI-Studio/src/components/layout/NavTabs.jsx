@@ -1,17 +1,10 @@
 import React from 'react';
 
-const TABS = [
-    { id: 'task', label: 'Studio', icon: '🎨' },
-    { id: 'apps', label: 'Apps & Clients', icon: '📱' },
-    { id: 'builder', label: 'Tool Builder', icon: '🛠️' },
-    { id: 'tools', label: 'Tools', icon: '⚡' },
-    { id: 'workers', label: 'Workers', icon: '⚙️' },
-    { id: 'features', label: 'Catalog', icon: '📋' }
-];
+import { NAV_ITEMS as TABS } from './navItems';
 
 export function NavTabs({ activeTab, onChangeTab }) {
     return (
-        <nav className="flex items-center gap-1 bg-[#0e111c] border border-white/10 p-0.5 sm:p-1 rounded-xl sm:rounded-2xl shadow-inner">
+        <nav className="w-max flex items-center gap-1 bg-[#141414] border border-white/10 p-0.5 sm:p-1 rounded-xl sm:rounded-2xl shadow-inner">
             {TABS.map(tab => {
                 const active = activeTab === tab.id;
                 return (

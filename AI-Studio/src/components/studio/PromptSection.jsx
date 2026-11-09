@@ -19,7 +19,7 @@ export function PromptSection({ type, form, setForm }) {
         <div className="space-y-3">
             {/* Angle & Pose Chips if applicable */}
             {type.angles && type.angles.length > 0 && (
-                <div className="space-y-2 bg-[#080b12] border border-amber-400/25 p-3 sm:p-3.5 rounded-xl">
+                <div className="space-y-2 bg-[#0f0f0f] border border-amber-400/25 p-3 sm:p-3.5 rounded-xl">
                     <div className="flex items-center justify-between">
                         <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
                             <Camera className="w-4 h-4 text-amber-400" />
@@ -72,7 +72,7 @@ export function PromptSection({ type, form, setForm }) {
                     onChange={e => setForm({ ...form, prompt: e.target.value })}
                     rows={3}
                     placeholder={type.promptRequired ? "Describe what to generate, outfit colors, lighting, studio background..." : "Extra styling details, environment, lighting, pose specifics (optional)..."}
-                    className={`w-full bg-[#080b12] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none transition-all font-sans leading-relaxed ${
+                    className={`w-full bg-[#0f0f0f] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none transition-all font-sans leading-relaxed ${
                         type.promptRequired && !form.prompt?.trim()
                             ? 'border-2 border-rose-500/50 focus:border-rose-400 bg-rose-950/10'
                             : 'border border-slate-800 focus:border-amber-400'

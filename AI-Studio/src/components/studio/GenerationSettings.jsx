@@ -1,14 +1,53 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { InfoTip } from '../common/InfoTip';
+import { capsOf } from '../../constants/models';
 
 export function GenerationSettings({ form, setForm, type, caps, modelOptions }) {
     const isImage = type.output === 'image';
-    const aspects = Array.isArray(caps?.aspects) && caps.aspects.length > 0 
+    const preferredOrder = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '4:5', '5:4', '21:9'];
+    const rawAspects = Array.isArray(caps?.aspects) && caps.aspects.length > 0 
         ? caps.aspects 
-        : ['1:1', '4:5', '9:16', '16:9'];
+        : ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '4:5'];
+    
+    // Sort aspects according to preferred order and ensure 9:16 is included
+    const combinedAspects = Array.from(new Set([...rawAspects, '9:16']));
+    const aspects = combinedAspects.sort((a, b) => {
+        const ia = preferredOrder.indexOf(a);
+        const ib = preferredOrder.indexOf(b);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
     const sizes = Array.isArray(caps?.sizes) && caps.sizes.length > 0 
-        ? caps.sizes 
-        : ['1K', '2K', '4K'];
+        ? (caps.sizes.includes('720') ? caps.sizes : ['720', ...caps.sizes])
+        : ['720', '1K', '2K', '4K'];
+
+    // Auto-select 720 resolution quality for every image model in admin
+    useEffect(() => {
+        if (isImage) {
+            if (!form.image_size || !sizes.includes(form.image_size)) {
+                const autoSize = sizes.includes('720') ? '720' : (sizes[0] || '720');
+                setForm(prev => ({ ...prev, image_size: autoSize }));
+            }
+        }
+    }, [isImage, form.model, sizes, form.image_size, setForm]);
+
+    const handleModelChange = (newModel) => {
+        const newCaps = capsOf(newModel);
+        const autoSize = (newCaps?.sizes && newCaps.sizes.includes('720')) 
+            ? '720' 
+            : (newCaps?.sizes?.[0] || '720');
+
+        setForm(prev => ({
+            ...prev,
+            model: newModel,
+            ...(isImage ? {
+                image_size: autoSize,
+                aspect_ratio: newCaps?.aspects?.includes(prev.aspect_ratio) 
+                    ? prev.aspect_ratio 
+                    : (newCaps?.aspects?.[0] || prev.aspect_ratio || '4:5')
+            } : {})
+        }));
+    };
 
     return (
         <div className="space-y-4">
@@ -20,12 +59,12 @@ export function GenerationSettings({ form, setForm, type, caps, modelOptions }) 
                 </label>
                 <select
                     value={form.model}
-                    onChange={e => setForm({ ...form, model: e.target.value })}
-                    className="h-9 w-full bg-[#080b12] border border-slate-800 rounded-xl px-3 text-xs text-white font-mono focus:outline-none focus:border-amber-400 transition-colors"
+                    onChange={e => handleModelChange(e.target.value)}
+                    className="h-9 w-full bg-[#0f0f0f] border border-slate-800 rounded-xl px-3 text-xs text-white font-mono focus:outline-none focus:border-amber-400 transition-colors"
                 >
                     {(modelOptions || []).map(id => (
                         <option key={id} value={id}>
-                            {id} {id === 'gemini-3.1-flash-image-preview' ? '(Recommended • 2K/4K)' : ''}
+                            {id} {id === 'gemini-3.1-flash-image-preview' ? '(Recommended • 720/2K/4K)' : ''}
                         </option>
                     ))}
                 </select>
@@ -41,7 +80,7 @@ export function GenerationSettings({ form, setForm, type, caps, modelOptions }) 
                             <InfoTip text="Controls width-to-height proportion (1:1 Square, 4:5 Portrait, 9:16 Story)." />
                         </label>
                         <div className="flex flex-wrap gap-1">
-                            {aspects.slice(0, 5).map(a => (
+                            {aspects.map(a => (
                                 <button
                                     key={a}
                                     type="button"
@@ -62,16 +101,18 @@ export function GenerationSettings({ form, setForm, type, caps, modelOptions }) 
                     <div>
                         <label className="block text-[11px] font-bold text-slate-400 mb-1">
                             Resolution Size
-                            <InfoTip text="Output image resolution quality (1K Standard, 2K Crisp, 4K Ultra-HD)." />
+                            <InfoTip text="Output image resolution quality (720 Standard HD, 1K Standard, 2K Crisp, 4K Ultra-HD). Auto 720 default selected." />
                         </label>
                         <select
-                            value={form.image_size}
+                            value={form.image_size || '720'}
                             onChange={e => setForm({ ...form, image_size: e.target.value })}
                             disabled={!sizes.length}
                             className="h-8 w-full bg-slate-900 border border-slate-800 rounded-lg px-2 text-xs text-slate-200 font-mono disabled:opacity-40 focus:outline-none focus:border-amber-400"
                         >
                             {sizes.map(s => (
-                                <option key={s} value={s}>{s || 'Default'}</option>
+                                <option key={s} value={s}>
+                                    {s} {s === '720' ? '(Auto Default)' : ''}
+                                </option>
                             ))}
                         </select>
                     </div>

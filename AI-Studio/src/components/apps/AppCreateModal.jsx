@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Shield, Loader2, Check } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-import { TABLES } from '../../api/config';
+import { adminApi } from '../../api/adminApi';
 import { useT } from '../../i18n/lang';
 
 export function AppCreateModal({ isOpen, onClose, onCreated }) {
@@ -26,7 +26,7 @@ export function AppCreateModal({ isOpen, onClose, onCreated }) {
         setLoading(true);
         try {
             // 1. Insert into ai_studio_apps
-            const { error: appErr } = await sb.from(TABLES.APPS).insert({
+            const { error: appErr } = await adminApi.createApp({
                 app_id: cleanId,
                 label: cleanLabel,
                 enabled,
@@ -42,11 +42,8 @@ export function AppCreateModal({ isOpen, onClose, onCreated }) {
                     app_id: cleanId,
                     task_type: tool.task_type
                 }));
-                try {
-                    await sb.from(TABLES.APP_TASKS).insert(batchRows);
-                } catch (batchErr) {
-                    console.warn('Batch assign warning:', batchErr);
-                }
+                const { error: batchErr } = await adminApi.linkAppTasks(cleanId, batchRows.map(r => r.task_type));
+                if (batchErr) console.warn('Batch assign warning:', batchErr);
             }
 
             await loadCatalog();
@@ -62,7 +59,7 @@ export function AppCreateModal({ isOpen, onClose, onCreated }) {
 
     return (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-            <div className="bg-[#0e1320] border border-slate-800 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+            <div className="bg-[#161616] border border-slate-800 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                     <div className="flex items-center gap-2.5">
@@ -95,7 +92,7 @@ export function AppCreateModal({ isOpen, onClose, onCreated }) {
                             value={appId}
                             onChange={e => setAppId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
                             placeholder="e.g. zara_studio, myntra_app"
-                            className="w-full h-9 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                            className="w-full h-9 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-amber-400"
                         />
                         <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">Lowercase alphanumeric and underscores only</span>
                     </div>
@@ -110,7 +107,7 @@ export function AppCreateModal({ isOpen, onClose, onCreated }) {
                             value={label}
                             onChange={e => setLabel(e.target.value)}
                             placeholder="e.g. Zara E-Commerce Studio"
-                            className="w-full h-9 bg-[#080b12] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                            className="w-full h-9 bg-[#0f0f0f] border border-slate-700 rounded-xl px-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
                         />
                     </div>
 

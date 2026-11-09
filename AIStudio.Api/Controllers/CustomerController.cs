@@ -7,6 +7,7 @@ using AIStudio.Api.Models;
 using AIStudio.Api.Services;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 
 namespace AIStudio.Api.Controllers
 {
@@ -15,10 +16,14 @@ namespace AIStudio.Api.Controllers
     public class CustomerController : ControllerBase
     {
         private readonly DatabaseService _db;
+        private readonly ApiKeyService _apiKeys;
+        private readonly IConfiguration _config;
 
-        public CustomerController(DatabaseService db)
+        public CustomerController(DatabaseService db, ApiKeyService apiKeys, IConfiguration config)
         {
             _db = db;
+            _apiKeys = apiKeys;
+            _config = config;
         }
 
         [HttpGet("catalog")]
@@ -107,44 +112,6 @@ namespace AIStudio.Api.Controllers
             });
         }
 
-        [HttpGet("tasks")]
-        public async Task<IActionResult> GetTasks([FromQuery] string? userId, [FromQuery] int limit = 50)
-        {
-            if (string.IsNullOrWhiteSpace(userId))
-                userId = "weargen_user_1";
-
-            using var conn = _db.CreateConnection();
-            string sql = @"
-                SELECT TOP (@Limit)
-                    id, task_type as TaskType, model, prompt, status, error,
-                    output_image_url as OutputImageUrl, output_image_urls as OutputImageUrls,
-                    output_text as OutputText, created_at as CreatedAt, batch_count as BatchCount,
-                    face_match_score as FaceMatchScore, duration_ms as DurationMs
-                FROM ai_studio_tasks
-                WHERE user_id = @UserId
-                ORDER BY created_at DESC;";
-
-            var rows = await conn.QueryAsync<TaskItem>(sql, new { UserId = userId, Limit = limit });
-            var result = rows.Select(r => new
-            {
-                id = r.Id,
-                task_type = r.TaskType,
-                model = r.Model,
-                prompt = r.Prompt,
-                status = r.Status,
-                error = r.Error,
-                output_image_url = r.OutputImageUrl,
-                output_image_urls = string.IsNullOrEmpty(r.OutputImageUrls) ? null : JsonSerializer.Deserialize<string[]>(r.OutputImageUrls),
-                output_text = r.OutputText,
-                created_at = r.CreatedAt.ToString("o"),
-                batch_count = r.BatchCount,
-                face_match_score = r.FaceMatchScore,
-                duration_ms = r.DurationMs
-            });
-
-            return Ok(result);
-        }
-
         public class CreateTaskDto
         {
             public string task_type { get; set; } = string.Empty;
@@ -164,48 +131,5 @@ namespace AIStudio.Api.Controllers
             public object? family_role_keys { get; set; }
         }
 
-        [HttpPost("tasks")]
-        public async Task<IActionResult> CreateTask([FromBody] CreateTaskDto dto)
-        {
-            var settings = await _db.GetSettingsAsync();
-            if (settings.MaintenanceOn)
-                return StatusCode(503, new { error = settings.MaintenanceMessage });
-
-            string? extraJson = null;
-            if (dto.extra_image_urls != null)
-                extraJson = dto.extra_image_urls is string s ? s : JsonSerializer.Serialize(dto.extra_image_urls);
-
-            string? familyKeysJson = null;
-            if (dto.family_role_keys != null)
-                familyKeysJson = dto.family_role_keys is string fk ? fk : JsonSerializer.Serialize(dto.family_role_keys);
-
-            var task = new TaskItem
-            {
-                TaskType = dto.task_type,
-                Model = dto.model,
-                Prompt = dto.prompt,
-                SystemText = dto.system_text,
-                AspectRatio = dto.aspect_ratio,
-                ImageSize = dto.image_size,
-                FaceImageUrl = dto.face_image_url,
-                StyleImageUrl = dto.style_image_url,
-                InputImageUrl = dto.input_image_url,
-                ExtraImageUrls = extraJson,
-                ConversationId = dto.conversation_id,
-                UserId = string.IsNullOrWhiteSpace(dto.user_id) ? "weargen_user_1" : dto.user_id,
-                BatchCount = dto.batch_count > 0 ? dto.batch_count : 1,
-                AppId = string.IsNullOrWhiteSpace(dto.app_id) ? "weargen" : dto.app_id,
-                FamilyRoleKeys = familyKeysJson
-            };
-
-            var (isValid, errorMsg) = await _db.ValidateTaskParametersAsync(task);
-            if (!isValid)
-            {
-                return BadRequest(new { success = false, error = errorMsg, message = errorMsg });
-            }
-
-            long id = await _db.CreateTaskAsync(task);
-            return Ok(new { id = id, status = "pending" });
-        }
     }
 }

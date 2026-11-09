@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { X, Copy, Check, Terminal, Code2, Globe, ShieldCheck, Play, ArrowRight } from 'lucide-react';
-import { API_URL, API_KEY } from '../../api/config';
+import { API_URL } from '../../api/config';
 import { useT } from '../../i18n/lang';
+import { adminApi } from '../../api/adminApi';
 
 export function AppApiModal({ isOpen, onClose, appId, appLabel, selectedTool, samplePayload }) {
     const t = useT();
-    if (!isOpen) return null;
-
     const [activeTab, setActiveTab] = useState('curl'); // 'curl' | 'js' | 'python' | 'json'
     const [copied, setCopied] = useState(false);
     const [testResult, setTestResult] = useState(null);
     const [testing, setTesting] = useState(false);
+
+    if (!isOpen) return null;
 
     const taskType = selectedTool?.task_type || 'text_to_image';
     const toolLabel = selectedTool?.label || 'Text to Image';
@@ -21,7 +22,7 @@ export function AppApiModal({ isOpen, onClose, appId, appLabel, selectedTool, sa
         prompt: samplePayload?.prompt || 'Professional fashion studio photoshoot, ultra realistic, 4k',
         model: samplePayload?.model || 'gemini-2.5-flash-image',
         aspect_ratio: samplePayload?.aspect_ratio || '1:1',
-        image_size: samplePayload?.image_size || '1K',
+        image_size: samplePayload?.image_size || '720',
         input_image_url: samplePayload?.input_image_url || null,
         face_image_url: samplePayload?.face_image_url || null,
         extra_image_urls: samplePayload?.extra_image_urls || null,
@@ -29,42 +30,39 @@ export function AppApiModal({ isOpen, onClose, appId, appLabel, selectedTool, sa
         batch_count: 1
     };
 
-    const endpointUrl = `${API_URL}/rest/v1/rpc/upload_ai_studio_task`;
-    const tasksUrl = `${API_URL}/rest/v1/ai_studio_tasks?id=eq.{TASK_ID}&app_id=eq.${appId}`;
+    const endpointUrl = `${API_URL}/api/customer/tasks`;
+    const tasksUrl = `${API_URL}/api/customer/tasks?userId=${payloadObj.user_id}&appId=${appId}`;
 
     const snippets = {
         curl: `curl -X POST "${endpointUrl}" \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${API_KEY}" \\
-  -d '${JSON.stringify({ p_payload: payloadObj }, null, 2)}'`,
+  -H "X-Api-Key: YOUR_APP_API_KEY" \\
+  -d '${JSON.stringify(payloadObj, null, 2)}'`,
 
         js: `// ⚡ Universal JavaScript / Node.js / React Client
 async function generateWithApp() {
   const API_URL = "${API_URL}";
-  const API_KEY = "${API_KEY}";
+  const API_KEY = "YOUR_APP_API_KEY"; // app key from the Apps page, never the admin key
 
   // 1. Submit AI Generation Task for App: "${appId}"
-  const res = await fetch(\`\${API_URL}/rest/v1/rpc/upload_ai_studio_task\`, {
+  const res = await fetch(\`\${API_URL}/api/customer/tasks\`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": \`Bearer \${API_KEY}\`
+      "X-Api-Key": API_KEY
     },
-    body: JSON.stringify({
-      p_payload: ${JSON.stringify(payloadObj, null, 6)}
-    })
+    body: JSON.stringify(${JSON.stringify(payloadObj, null, 6)})
   });
 
-  const taskId = await res.json();
+  const { id: taskId } = await res.json();
   console.log("⚡ Task Created Successfully! Task ID:", taskId);
 
   // 2. Poll Task Status until Worker completes it
   const checkStatus = async () => {
-    const poll = await fetch(\`\${API_URL}/rest/v1/ai_studio_tasks?id=eq.\${taskId}&app_id=eq.${appId}\`, {
-      headers: { "Authorization": \`Bearer \${API_KEY}\` }
+    const poll = await fetch(\`\${API_URL}/api/customer/tasks?userId=${appId}_api_user&appId=${appId}\`, {
+      headers: { "X-Api-Key": API_KEY }
     });
-    const tasks = await poll.json();
-    const task = tasks[0];
+    const task = (await poll.json()).find(t => t.id === taskId);
 
     if (task?.status === "completed") {
       console.log("🎉 Result Image URL:", task.output_image_url);
@@ -84,27 +82,25 @@ async function generateWithApp() {
         python: `import requests, time
 
 API_URL = "${API_URL}"
-API_KEY = "${API_KEY}"
+API_KEY = "YOUR_APP_API_KEY"  # app key from the Apps page, never the admin key
 HEADERS = {
-    "Authorization": f"Bearer {API_KEY}",
+    "X-Api-Key": API_KEY,
     "Content-Type": "application/json"
 }
 
 # 1. Dispatch Task to App "${appId}"
-payload = {
-    "p_payload": ${JSON.stringify(payloadObj, null, 4).replace(/null/g, 'None')}
-}
+payload = ${JSON.stringify(payloadObj, null, 4).replace(/null/g, 'None')}
 
 print("Submitting task to ${appLabel} API...")
-response = requests.post(f"{API_URL}/rest/v1/rpc/upload_ai_studio_task", json=payload, headers=HEADERS)
-task_id = response.json()
+response = requests.post(f"{API_URL}/api/customer/tasks", json=payload, headers=HEADERS)
+task_id = response.json()["id"]
 print(f"Task dispatched successfully! ID: {task_id}")
 
 # 2. Poll result
 for i in range(60):
     time.sleep(2)
-    poll = requests.get(f"{API_URL}/rest/v1/ai_studio_tasks?id=eq.{task_id}&app_id=eq.${appId}", headers=HEADERS)
-    tasks = poll.json()
+    poll = requests.get(f"{API_URL}/api/customer/tasks?userId=${payloadObj.user_id}&appId=${appId}", headers=HEADERS)
+    tasks = [t for t in poll.json() if t["id"] == task_id]
     if tasks:
         task = tasks[0]
         status = task.get("status")
@@ -121,11 +117,9 @@ for i in range(60):
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${API_KEY}`
+                "X-Api-Key": "YOUR_APP_API_KEY"
             },
-            payload: {
-                p_payload: payloadObj
-            }
+            payload: payloadObj
         }, null, 2)
     };
 
@@ -139,11 +133,9 @@ for i in range(60):
         setTesting(true);
         setTestResult(null);
         try {
-            const res = await fetch(`${API_URL}/rest/v1/ai_studio_apps?app_id=eq.${appId}&select=*`, {
-                headers: { 'Authorization': `Bearer ${API_KEY}` }
-            });
-            const data = await res.json();
-            if (res.ok && data.length > 0) {
+            const { data: app, error } = await adminApi.getApp(appId);
+            const data = app ? [app] : [];
+            if (!error && app) {
                 setTestResult({
                     success: true,
                     message: `✅ API Connected! App "${data[0].label}" is active and ready on MonsterASP.`
@@ -163,9 +155,9 @@ for i in range(60):
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-[#0e1320] border border-slate-800 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="bg-[#161616] border border-slate-800 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
                 {/* Modal Header */}
-                <div className="p-5 border-b border-slate-800/80 flex items-center justify-between bg-[#080b12]">
+                <div className="p-5 border-b border-slate-800/80 flex items-center justify-between bg-[#0f0f0f]">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-400">
                             <Terminal className="w-5 h-5" />
@@ -194,10 +186,10 @@ for i in range(60):
                 </div>
 
                 {/* API Info Badges */}
-                <div className="px-5 py-3 bg-[#0a0d17] border-b border-slate-800/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="px-5 py-3 bg-[#101010] border-b border-slate-800/60 flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
                         <span className="bg-slate-900 text-slate-300 px-2 py-1 rounded-lg border border-slate-800">
-                            POST /rest/v1/rpc/upload_ai_studio_task
+                            POST /api/customer/tasks
                         </span>
                         <span className="bg-amber-400/10 text-amber-300 px-2 py-1 rounded-lg border border-amber-400/20">
                             Active Tool: {toolLabel}
@@ -227,8 +219,8 @@ for i in range(60):
                 )}
 
                 {/* Code Snippet Tabs */}
-                <div className="flex items-center justify-between px-5 pt-4 bg-[#0e1320]">
-                    <div className="flex items-center gap-1 bg-[#080b12] p-1 rounded-xl border border-slate-800 text-xs font-bold">
+                <div className="flex items-center justify-between px-5 pt-4 bg-[#161616]">
+                    <div className="flex items-center gap-1 bg-[#0f0f0f] p-1 rounded-xl border border-slate-800 text-xs font-bold">
                         {[
                             { id: 'curl', label: 'cURL' },
                             { id: 'js', label: 'JavaScript / Node' },
@@ -271,12 +263,12 @@ for i in range(60):
 
                 {/* Code View Body */}
                 <div className="p-5 flex-1 overflow-y-auto">
-                    <pre className="bg-[#05070c] border border-slate-800/90 rounded-2xl p-4 font-mono text-xs text-slate-300 leading-relaxed overflow-x-auto whitespace-pre selection:bg-amber-400 selection:text-black">
+                    <pre className="bg-[#070707] border border-slate-800/90 rounded-2xl p-4 font-mono text-xs text-slate-300 leading-relaxed overflow-x-auto whitespace-pre selection:bg-amber-400 selection:text-black">
                         {snippets[activeTab]}
                     </pre>
 
                     {/* How it works guidance */}
-                    <div className="mt-4 bg-[#080b12] border border-slate-800/70 rounded-2xl p-4 space-y-2 text-xs">
+                    <div className="mt-4 bg-[#0f0f0f] border border-slate-800/70 rounded-2xl p-4 space-y-2 text-xs">
                         <h4 className="font-bold text-slate-200 flex items-center gap-1.5">
                             <ShieldCheck className="w-4 h-4 text-amber-400" />
                             <span>API Level Security & Validation</span>
@@ -296,8 +288,8 @@ for i in range(60):
                             </li>
                             <li>
                                 {t(
-                                    <>Task generate hone ke baad real-time status check karne ke liye: <code className="text-slate-300">GET /rest/v1/ai_studio_tasks?id=eq.&#123;id&#125;&app_id=eq.{appId}</code></>,
-                                    <>To check the status in real time after the task is generated: <code className="text-slate-300">GET /rest/v1/ai_studio_tasks?id=eq.&#123;id&#125;&app_id=eq.{appId}</code></>
+                                    <>Task generate hone ke baad real-time status check karne ke liye: <code className="text-slate-300">GET /api/customer/tasks?userId={appId}_api_user&amp;appId={appId}</code></>,
+                                    <>To check the status in real time after the task is generated: <code className="text-slate-300">GET /api/customer/tasks?userId={appId}_api_user&amp;appId={appId}</code></>
                                 )}
                             </li>
                         </ul>
@@ -305,7 +297,7 @@ for i in range(60):
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-slate-800 bg-[#080b12] flex items-center justify-between">
+                <div className="p-4 border-t border-slate-800 bg-[#0f0f0f] flex items-center justify-between">
                     <span className="text-[11px] text-slate-400 font-mono">
                         Host: {API_URL}
                     </span>

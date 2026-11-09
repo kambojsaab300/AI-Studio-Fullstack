@@ -13,7 +13,7 @@ import { EMPTY_FORM, typeOf } from '../../constants/formDefaults';
 import { MODEL_CAPS, capsOf } from '../../constants/models';
 import { getToolCategory } from '../../constants/categories';
 import { rowFromForm, requestPreview, problemsFor } from '../../utils/taskHelpers';
-import { API } from '../../api/config';
+import { adminApi } from '../../api/adminApi';
 import { useT } from '../../i18n/lang';
 
 export function StudioScreen() {
@@ -40,13 +40,14 @@ export function StudioScreen() {
         const validModels = Object.keys(MODEL_CAPS).filter(id => capsOf(id).kind === t.kind);
         const model = validModels[0] || 'gemini-3.1-flash-image-preview';
         const c = capsOf(model);
+        const autoSize = c.sizes?.includes('720') ? '720' : (c.sizes?.[0] || '720');
 
         setForm(prev => ({
             ...prev,
             task_type: taskType,
             model,
             aspect_ratio: c.kind === 'image' ? (c.aspects?.includes(prev.aspect_ratio) ? prev.aspect_ratio : c.aspects?.[0] || '4:5') : prev.aspect_ratio,
-            image_size: c.sizes?.length ? (c.sizes?.includes(prev.image_size) ? prev.image_size : c.sizes[1] || c.sizes[0]) : ''
+            image_size: c.kind === 'image' ? autoSize : ''
         }));
     };
 
@@ -61,7 +62,7 @@ export function StudioScreen() {
         setIsGenerating(true);
         setBtnFeedback(null);
         try {
-            const { data, error } = await sb.rpc(API.CREATE_TASK, { p_payload: row });
+            const { data, error } = await adminApi.createTask(row);
             if (error) {
                 const errMsg = error.message || error.error || (typeof error === 'string' ? error : JSON.stringify(error));
                 const errText = t('❌ Task create nahi ho saka: ', '❌ Could not create task: ') + errMsg;
@@ -118,7 +119,7 @@ export function StudioScreen() {
             />
 
             {/* Mobile Tab Switcher */}
-            <div className="flex lg:hidden bg-[#0e1320] p-1 rounded-xl border border-slate-800 text-xs font-bold">
+            <div className="flex lg:hidden bg-[#161616] p-1 rounded-xl border border-slate-800 text-xs font-bold">
                 <button
                     type="button"
                     onClick={() => setMobileTab('studio')}
@@ -144,7 +145,7 @@ export function StudioScreen() {
             {/* 2. Main Studio Grid: Left Configuration (7 Cols) + Right Live JSON Console (5 Cols) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 {/* LEFT COLUMN: Tool Configuration & Generation Form */}
-                <div className={`lg:col-span-7 bg-[#0e1320] border border-slate-800/80 rounded-2xl p-5 space-y-5 shadow-xl ${
+                <div className={`lg:col-span-7 bg-[#161616] border border-slate-800/80 rounded-2xl p-5 space-y-5 shadow-xl ${
                     mobileTab === 'studio' ? 'block' : 'hidden lg:block'
                 }`}>
                     {/* Active Tool Hero Header */}

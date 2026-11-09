@@ -5,7 +5,7 @@ import {
     MessageSquare, Database
 } from 'lucide-react';
 import { createClient } from '../../api/client';
-import { API_URL, API_KEY, API, TABLES, REFRESH_MS } from '../../api/config';
+import { API_URL, API_KEY, REFRESH_MS } from '../../api/config';
 import { GenerationSettings } from '../studio/GenerationSettings';
 import { PhotoSlotGrid } from '../studio/PhotoSlotGrid';
 import { BatchUploader } from '../studio/BatchUploader';
@@ -19,6 +19,7 @@ import { getToolCategory, TOOL_CATEGORIES } from '../../constants/categories';
 import { rowFromForm, requestPreview, problemsFor } from '../../utils/taskHelpers';
 import { formatDuration, timeAgo } from '../../utils/formatters';
 import { createAppService } from '../../api/appService';
+import { adminApi } from '../../api/adminApi';
 import { AppApiModal } from './AppApiModal';
 import { useT } from '../../i18n/lang';
 
@@ -46,6 +47,7 @@ export function StandaloneAppPage({ defaultAppId }) {
     const [prompts, setPrompts] = useState({});
     const [models, setModels] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
     const [msg, setMsg] = useState('');
     const [apiModalOpen, setApiModalOpen] = useState(false);
 
@@ -65,14 +67,15 @@ export function StandaloneAppPage({ defaultAppId }) {
     const loadAppData = useCallback(async () => {
         try {
             const [appRes, catRes, linksRes, prRes, modRes] = await Promise.all([
-                sb.from(TABLES.APPS).select('*').eq('app_id', appId).single(),
-                sb.from(TABLES.CATALOG).select('*').order('sort'),
-                sb.from(TABLES.APP_TASKS).select('*').eq('app_id', appId),
-                sb.from(TABLES.PROMPTS).select('*'),
-                sb.from(TABLES.MODELS).select('*').order('model_id')
+                adminApi.getApp(appId),
+                adminApi.listCatalog(),
+                adminApi.listAppTasks(appId),
+                adminApi.listPrompts(),
+                adminApi.listModels()
             ]);
 
             if (appRes.data) setApp(appRes.data);
+            setLoadError(appRes.error || null);
             if (catRes.data) {
                 setCatalog(catRes.data);
                 setTaskTypes(catRes.data);
@@ -104,11 +107,7 @@ export function StandaloneAppPage({ defaultAppId }) {
     // 3. Load Tasks for this specific app (Lean Column Projection)
     const loadTasksForApp = useCallback(async () => {
         try {
-            const { data } = await sb.from(TABLES.TASKS)
-                .select('id,task_type,model,prompt,aspect_ratio,image_size,status,error,output_text,output_image_url,output_image_urls,input_image_url,face_image_url,style_image_url,worker_id,app_id,user_id,batch_count,conversation_id,face_match_score,created_at,finished_at,duration_ms,process_ms')
-                .eq('app_id', appId)
-                .order('id', { ascending: false })
-                .limit(20);
+            const { data } = await adminApi.listTasks({ appId, limit: 20 });
             if (data) setAppTasksList(data);
         } catch (err) {
             console.warn('loadTasksForApp error:', err);
@@ -167,13 +166,14 @@ export function StandaloneAppPage({ defaultAppId }) {
         const validModels = Object.keys(MODEL_CAPS).filter(id => capsOf(id).kind === t.kind);
         const model = validModels[0] || 'gemini-3.1-flash-image-preview';
         const c = capsOf(model);
+        const autoSize = c.sizes?.includes('720') ? '720' : (c.sizes?.[0] || '720');
 
         setForm(prev => ({
             ...prev,
             task_type: taskType,
             model,
             aspect_ratio: c.kind === 'image' ? (c.aspects?.includes(prev.aspect_ratio) ? prev.aspect_ratio : c.aspects?.[0] || '4:5') : prev.aspect_ratio,
-            image_size: c.sizes?.length ? (c.sizes?.includes(prev.image_size) ? prev.image_size : c.sizes[1] || c.sizes[0]) : ''
+            image_size: c.kind === 'image' ? autoSize : ''
         }));
     };
 
@@ -229,7 +229,7 @@ export function StandaloneAppPage({ defaultAppId }) {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[#07080d] text-white flex items-center justify-center p-4">
+            <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center p-4">
                 <div className="flex items-center gap-2.5 text-xs font-mono text-amber-400">
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Loading App Workspace ({appId})...</span>
@@ -238,12 +238,27 @@ export function StandaloneAppPage({ defaultAppId }) {
         );
     }
 
+    if (loadError && !app) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center p-4">
+                <div className="max-w-sm text-center space-y-2">
+                    <p className="text-sm font-bold text-rose-300">{loadError.message}</p>
+                    {loadError.status === 401 && (
+                        <p className="text-xs text-stone-400">
+                            {t('Pehle Admin portal mein login karein, phir yeh page dobara kholein.', 'Log in to the Admin portal first, then reopen this page.')}
+                        </p>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     const appLabel = app?.label || appId.toUpperCase();
 
     return (
-        <div className="min-h-screen bg-[#07080d] text-slate-100 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-950">
+        <div className="min-h-screen bg-[#0a0a0a] text-slate-100 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-950">
             {/* Top Standalone Header */}
-            <header className="border-b border-slate-800/80 bg-[#080b12]/90 backdrop-blur-md sticky top-0 z-40">
+            <header className="border-b border-slate-800/80 bg-[#0f0f0f]/90 backdrop-blur-md sticky top-0 z-40">
                 <div className="max-w-7xl mx-auto px-4 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-200 flex items-center justify-center shadow-lg shadow-amber-400/20 font-mono font-black text-slate-950 text-base">
@@ -296,7 +311,7 @@ export function StandaloneAppPage({ defaultAppId }) {
             {/* Main Workspace Body */}
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
                 {/* Hero Status Card */}
-                <div className="bg-gradient-to-r from-amber-400/10 via-[#0e1320] to-[#0e1320] border border-amber-400/30 rounded-3xl p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
+                <div className="bg-gradient-to-r from-amber-400/10 via-[#161616] to-[#161616] border border-amber-400/30 rounded-3xl p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
                             <span className="text-xl">🚀</span>
@@ -338,7 +353,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                 {/* 2-Column Tool Execution Studio */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     {/* Left Column (5 Cols): Assigned Tools Palette */}
-                    <div className="lg:col-span-5 bg-[#0e1320] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xl">
+                    <div className="lg:col-span-5 bg-[#161616] border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xl">
                         <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
                             <span className="text-xs font-bold text-slate-200">
                                 Assigned Tools ({assignedTools.length})
@@ -354,7 +369,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                                 value={toolSearch}
                                 onChange={e => setToolSearch(e.target.value)}
                                 placeholder="Filter tools in this app..."
-                                className="w-full h-8 bg-[#080b12] border border-slate-800 rounded-xl pl-8 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                                className="w-full h-8 bg-[#0f0f0f] border border-slate-800 rounded-xl pl-8 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                             />
                         </div>
 
@@ -374,7 +389,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                                         className={`whitespace-nowrap px-2 py-0.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-all ${
                                             active 
                                                 ? 'bg-amber-400 text-slate-950 font-bold' 
-                                                : 'bg-[#080b12] text-slate-400 hover:text-white border border-slate-800'
+                                                : 'bg-[#0f0f0f] text-slate-400 hover:text-white border border-slate-800'
                                         }`}
                                     >
                                         <span>{cat.icon}</span>
@@ -404,7 +419,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                                             className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
                                                 isSelected 
                                                     ? 'bg-amber-400/15 border-amber-400 text-white shadow-md shadow-amber-400/10 ring-1 ring-amber-400/40' 
-                                                    : 'bg-[#080b12] hover:bg-slate-800/60 border-slate-800/80 text-slate-300'
+                                                    : 'bg-[#0f0f0f] hover:bg-slate-800/60 border-slate-800/80 text-slate-300'
                                             }`}
                                         >
                                             <div className="flex items-center gap-2.5 overflow-hidden">
@@ -431,7 +446,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                     </div>
 
                     {/* Right Column (7 Cols): Form & Task Generator */}
-                    <div className="lg:col-span-7 bg-[#0e1320] border border-slate-800/80 rounded-2xl p-5 space-y-5 shadow-xl">
+                    <div className="lg:col-span-7 bg-[#161616] border border-slate-800/80 rounded-2xl p-5 space-y-5 shadow-xl">
                         {/* Tool Title */}
                         <div className="border-b border-slate-800/80 pb-3 flex items-start justify-between gap-3">
                             <div>
@@ -493,7 +508,7 @@ export function StandaloneAppPage({ defaultAppId }) {
                 </div>
 
                 {/* Bottom App-Specific Tasks History Table */}
-                <section className="bg-[#0b0e17] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
+                <section className="bg-[#121212] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
                         <div>
                             <h3 className="text-sm font-extrabold text-white">

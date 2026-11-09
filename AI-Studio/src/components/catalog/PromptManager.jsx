@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Terminal, Save, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-import { TABLES } from '../../api/config';
+import { adminApi } from '../../api/adminApi';
 import { useT } from '../../i18n/lang';
 
 export function PromptManager() {
@@ -34,13 +34,12 @@ export function PromptManager() {
         setSaving(true);
         setSavedMsg('');
         try {
-            const { error } = await sb.from(TABLES.PROMPTS).update({
+            const { error } = await adminApi.updatePrompt(selectedType, {
                 system_text: currentPrompt.system_text.trim(),
                 role_text: currentPrompt.role_text.trim(),
                 negative_text: currentPrompt.negative_text.trim(),
-                enabled: currentPrompt.enabled,
-                updated_at: new Date().toISOString()
-            }).eq('task_type', selectedType);
+                enabled: currentPrompt.enabled
+            });
 
             if (error) throw error;
 
@@ -55,7 +54,7 @@ export function PromptManager() {
     };
 
     return (
-        <section className="bg-[#0b0e17] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
+        <section className="bg-[#121212] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
                 <div className="flex items-center gap-3">
