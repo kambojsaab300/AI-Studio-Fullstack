@@ -452,7 +452,7 @@ function toTaskType(r) {
 }
 function setTaskTypes(rows) {
     Object.keys(TASK_TYPES).forEach(k => delete TASK_TYPES[k]);
-    (rows || []).forEach(r => { TASK_TYPES[r.task_type] = toTaskType(r); });
+    (Array.isArray(rows) ? rows : []).forEach(r => { TASK_TYPES[r.task_type] = toTaskType(r); });
 }
 const INPUT_LABEL = { face: 'Face reference', style: 'Style / outfit reference', input: 'Input photo' };
 const INPUT_COLUMN = { face: 'face_image_url', style: 'style_image_url', input: 'input_image_url' };
@@ -950,9 +950,9 @@ export default function AiStudioWorker() {
 
     const loadSettings = async (client) => {
         const { data: catalog } = await workerCall(client, 'GET', '/api/worker/catalog');
-        if (catalog) setTaskTypes(catalog);
+        if (Array.isArray(catalog)) setTaskTypes(catalog);
         const { data: roles } = await workerCall(client, 'GET', '/api/worker/family-roles');
-        if (roles) FAMILY_ROLES = roles;
+        if (Array.isArray(roles)) FAMILY_ROLES = roles;
         const { data, status } = await workerCall(client, 'GET', '/api/worker/settings');
         if (status !== 200 || !data) return;
         settingsRef.current = data;
