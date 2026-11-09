@@ -16,6 +16,25 @@
                     fontFamily: {
                         sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
                         mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        studio: {
+                            50: '#f8fafc',
+                            900: '#141414',
+                            950: '#0a0a0a',
+                        },
+                        // Matte black theme: the blue-tinted "slate" greys used across the admin become neutral greys
+                        slate: {
+                            50: '#e8e8e8', 100: '#dedede', 200: '#d0d0d0', 300: '#bdbdbd', 400: '#9a9a9a',
+                            500: '#737373', 600: '#525252', 700: '#3a3a3a', 800: '#262626', 900: '#171717', 950: '#0a0a0a'
+                        },
+                        // No yellow: the "amber" accent becomes a soft silver (not pure white, easier on the eyes)
+                        amber: {
+                            50: '#e0e0e0', 100: '#d6d6d6', 200: '#cfcfcf', 300: '#c4c4c4', 400: '#b5b5b5',
+                            500: '#a3a3a3', 600: '#8a8a8a', 700: '#6b6b6b', 800: '#4d4d4d', 900: '#363636', 950: '#262626'
+                        },
+                        // Pure #fff text/headings are toned down to an off-white on the black background
+                        white: '#e4e4e4'
                     }
                 }
             }
@@ -24,9 +43,10 @@
     <style>
         body {
             font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-            background-color: #07080d;
-            color: #f1f5f9;
+            background-color: #0a0a0a;
+            color: #d6d6d6;
         }
+        /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -43,7 +63,7 @@
         }
     </style>
 </head>
-<body class="bg-[#07080d] text-slate-100 antialiased selection:bg-amber-400 selection:text-black min-h-screen">
+<body class="bg-[#0a0a0a] text-slate-100 antialiased selection:bg-amber-400 selection:text-black min-h-screen">
     <div id="root"></div>
     <script type="module" src="/customer.bundle.js"></script>
 </body>

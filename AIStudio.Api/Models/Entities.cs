@@ -85,7 +85,7 @@ namespace AIStudio.Api.Models
         public string CloudinaryCloudName { get; set; } = "draaqjcre";
         public string CloudinaryUploadPreset { get; set; } = "ml_default";
         public bool ImgbbEnabled { get; set; } = false;
-        public int MaxAttempts { get; set; } = 2;
+        public int MaxAttempts { get; set; } = 3;
         public int RetryDelaySec { get; set; } = 30;
         public int TaskTimeoutSec { get; set; } = 300;
         public int AlertQueueSize { get; set; } = 50;
@@ -187,5 +187,23 @@ namespace AIStudio.Api.Models
         public int Sort { get; set; } = 0;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
         public List<string> TaskTypes { get; set; } = new();
+    }
+
+    public class AppUsageDayRow
+    {
+        public string Day { get; set; } = string.Empty;
+        public string AppId { get; set; } = string.Empty;
+        public long Tasks { get; set; }
+        public long Done { get; set; }
+        public long Failed { get; set; }
+        public long Photos { get; set; }
+    }
+
+    public class AppUsageToolRow
+    {
+        public string AppId { get; set; } = string.Empty;
+        public string TaskType { get; set; } = string.Empty;
+        public long Tasks { get; set; }
+        public long Failed { get; set; }
     }
 }

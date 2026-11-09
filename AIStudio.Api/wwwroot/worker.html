@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="hi" class="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Studio Worker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        studio: {
+                            50: '#f8fafc',
+                            900: '#141414',
+                            950: '#0a0a0a',
+                        },
+                        // Matte black theme: the blue-tinted "slate" greys used across the admin become neutral greys
+                        slate: {
+                            50: '#e8e8e8', 100: '#dedede', 200: '#d0d0d0', 300: '#bdbdbd', 400: '#9a9a9a',
+                            500: '#737373', 600: '#525252', 700: '#3a3a3a', 800: '#262626', 900: '#171717', 950: '#0a0a0a'
+                        },
+                        // No yellow: the "amber" accent becomes a soft silver (not pure white, easier on the eyes)
+                        amber: {
+                            50: '#e0e0e0', 100: '#d6d6d6', 200: '#cfcfcf', 300: '#c4c4c4', 400: '#b5b5b5',
+                            500: '#a3a3a3', 600: '#8a8a8a', 700: '#6b6b6b', 800: '#4d4d4d', 900: '#363636', 950: '#262626'
+                        },
+                        // Pure #fff text/headings are toned down to an off-white on the black background
+                        white: '#e4e4e4'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            background-color: #0a0a0a;
+            color: #d6d6d6;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+    </style>
+</head>
+<body class="bg-[#0a0a0a] text-slate-100 antialiased selection:bg-amber-400 selection:text-black min-h-screen">
+    <div id="root"></div>
+    <script type="module" src="./worker-main.jsx"></script>
+</body>
+</html>

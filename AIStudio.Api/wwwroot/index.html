@@ -1,13 +1,70 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Studio - Portal Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        studio: {
+                            50: '#f8fafc',
+                            900: '#141414',
+                            950: '#0a0a0a',
+                        },
+                        // Matte black theme: the blue-tinted "slate" greys used across the admin become neutral greys
+                        slate: {
+                            50: '#e8e8e8', 100: '#dedede', 200: '#d0d0d0', 300: '#bdbdbd', 400: '#9a9a9a',
+                            500: '#737373', 600: '#525252', 700: '#3a3a3a', 800: '#262626', 900: '#171717', 950: '#0a0a0a'
+                        },
+                        // No yellow: the "amber" accent becomes a soft silver (not pure white, easier on the eyes)
+                        amber: {
+                            50: '#e0e0e0', 100: '#d6d6d6', 200: '#cfcfcf', 300: '#c4c4c4', 400: '#b5b5b5',
+                            500: '#a3a3a3', 600: '#8a8a8a', 700: '#6b6b6b', 800: '#4d4d4d', 900: '#363636', 950: '#262626'
+                        },
+                        // Pure #fff text/headings are toned down to an off-white on the black background
+                        white: '#e4e4e4'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            background-color: #0a0a0a;
+            color: #d6d6d6;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+    </style>
 </head>
-<body class="bg-stone-950 text-stone-100 min-h-screen flex items-center justify-center p-6">
-    <div class="max-w-xl w-full bg-stone-900 border border-stone-800 rounded-2xl p-8 shadow-2xl">
+<body class="bg-[#0a0a0a] text-slate-100 antialiased min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-xl w-full bg-[#0f0f0f] border border-white/10 rounded-2xl p-8 shadow-2xl">
         <div class="text-center mb-6">
             <span class="inline-block px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-xs font-medium tracking-wide mb-3">AI Studio Suite</span>
             <h1 class="text-3xl font-bold tracking-tight text-white mb-2">Select Portal to Launch</h1>
@@ -15,7 +72,7 @@
         </div>
 
         <!-- API Backend Configuration Card -->
-        <div class="mb-6 p-4 rounded-xl border border-stone-800 bg-stone-950/80">
+        <div class="mb-6 p-4 rounded-xl border border-white/10 bg-[#0a0a0a]/80">
             <div class="flex items-center justify-between mb-2">
                 <span class="text-xs font-semibold uppercase tracking-wider text-stone-400">Backend API URL</span>
                 <span id="apiStatus" class="inline-flex items-center gap-1.5 text-xs text-stone-400">
@@ -23,7 +80,7 @@
                 </span>
             </div>
             <div class="flex gap-2">
-                <input id="apiUrlInput" type="text" class="flex-1 bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500" placeholder="http://localhost:5005" />
+                <input id="apiUrlInput" type="text" class="flex-1 bg-[#0f0f0f] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500" placeholder="http://localhost:5005" />
                 <button id="saveApiBtn" onclick="saveApiUrl()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-stone-950 font-semibold text-xs rounded-lg transition-colors">Set API</button>
             </div>
             <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
@@ -36,7 +93,7 @@
         </div>
 
         <div class="space-y-4">
-            <a id="linkCustomer" href="/customer.html" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+            <a id="linkCustomer" href="/customer.html" class="portal-link block p-4 rounded-xl border border-white/10 bg-[#0a0a0a] hover:border-amber-500/50 hover:bg-[#161616] transition-all group">
                 <div class="flex items-center justify-between">
                     <div>
                         <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Customer Portal</div>
@@ -46,7 +103,7 @@
                 </div>
             </a>
 
-            <a id="linkAdmin" href="/admin.html" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+            <a id="linkAdmin" href="/admin.html" class="portal-link block p-4 rounded-xl border border-white/10 bg-[#0a0a0a] hover:border-amber-500/50 hover:bg-[#161616] transition-all group">
                 <div class="flex items-center justify-between">
                     <div>
                         <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Admin Portal</div>
@@ -56,7 +113,7 @@
                 </div>
             </a>
 
-            <a id="linkApp" href="/app.html?app=weargen" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+            <a id="linkApp" href="/app.html?app=weargen" class="portal-link block p-4 rounded-xl border border-white/10 bg-[#0a0a0a] hover:border-amber-500/50 hover:bg-[#161616] transition-all group">
                 <div class="flex items-center justify-between">
                     <div>
                         <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Client App Portal (WearGen & PPP)</div>
@@ -66,7 +123,7 @@
                 </div>
             </a>
 
-            <a id="linkWorker" href="/worker.html" class="portal-link block p-4 rounded-xl border border-stone-800 bg-stone-950 hover:border-amber-500/50 hover:bg-stone-900 transition-all group">
+            <a id="linkWorker" href="/worker.html" class="portal-link block p-4 rounded-xl border border-white/10 bg-[#0a0a0a] hover:border-amber-500/50 hover:bg-[#161616] transition-all group">
                 <div class="flex items-center justify-between">
                     <div>
                         <div class="font-semibold text-white group-hover:text-amber-400 transition-colors">Worker Portal</div>
